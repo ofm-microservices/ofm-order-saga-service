@@ -1,0 +1,733 @@
+package application
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/ofm-microservices/ofm-common/pkg/logging"
+	orderflowv1 "github.com/ofm-microservices/ofm-common/proto/orderflow/v1"
+	paymentflowv1 "github.com/ofm-microservices/ofm-common/proto/paymentflow/v1"
+	"google.golang.org/protobuf/encoding/protojson"
+	"order-saga-service/config"
+	"order-saga-service/internal/domain"
+)
+
+type service struct {
+	broker   EventBroker
+	sessions SessionRepository
+	steps    StepRepository
+	gigs     GigSnapshotClient
+	auth     AuthQueryClient
+	orders   OrderWriteClient
+	payments PaymentCheckoutClient
+	mapr     *messageMapper
+	cfg      config.NATSConfig
+	log      Logger
+}
+
+// New constructs the order saga orchestrator.
+func New(sessions SessionRepository, steps StepRepository, gigs GigSnapshotClient, auth AuthQueryClient, orders OrderWriteClient, payments PaymentCheckoutClient, broker EventBroker, cfg config.NATSConfig, log Logger) (Service, error) {
+	if sessions == nil {
+		return nil, ErrNilSessionRepository
+	}
+	if steps == nil {
+		return nil, ErrNilStepRepository
+	}
+	if gigs == nil {
+		return nil, ErrNilGigSnapshotClient
+	}
+	if auth == nil {
+		return nil, ErrNilAuthQueryClient
+	}
+	if orders == nil {
+		return nil, ErrNilOrderWriteClient
+	}
+	if payments == nil {
+		return nil, ErrNilPaymentCheckoutClient
+	}
+	if broker == nil {
+		return nil, ErrNilEventBroker
+	}
+	if log == nil {
+		return nil, ErrNilLogger
+	}
+	return &service{
+		sessions: sessions,
+		steps:    steps,
+		gigs:     gigs,
+		auth:     auth,
+		orders:   orders,
+		payments: payments,
+		broker:   broker,
+		mapr:     newMessageMapper(),
+		cfg:      cfg,
+		log:      log.With(logging.String("module", "application")),
+	}, nil
+}
+
+func (s *service) Start(ctx context.Context, cmd OrderSagaCommand) error {
+	if cmd.RequestedAt == "" {
+		cmd.RequestedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	if strings.TrimSpace(cmd.SagaID) == "" {
+		cmd.SagaID = uuid.NewString()
+	}
+	if strings.TrimSpace(cmd.OrderID) == "" {
+		cmd.OrderID = uuid.NewString()
+	}
+	snapshot, err := s.gigs.GetOrderStartSnapshot(ctx, cmd.GigID, cmd.PackageID)
+	if err != nil {
+		return err
+	}
+	if snapshot == nil {
+		return ErrInvalidOrderSnapshot
+	}
+	if strings.TrimSpace(snapshot.SellerID) == strings.TrimSpace(cmd.BuyerID) {
+		return ErrSelfOrderNotAllowed
+	}
+	buyerEmail, err := s.auth.GetEmailByUserID(ctx, cmd.BuyerID)
+	if err != nil {
+		return err
+	}
+	session := domain.Session{
+		SagaID:               cmd.SagaID,
+		OrderID:              cmd.OrderID,
+		BuyerID:              cmd.BuyerID,
+		SellerID:             snapshot.SellerID,
+		BuyerEmail:           buyerEmail,
+		RealtimeConnectionID: cmd.RealtimeConnectionID,
+		GigID:                snapshot.GigID,
+		GigTitle:             snapshot.GigTitle,
+		PackageID:            snapshot.PackageID,
+		PackageTier:          snapshot.PackageTitle,
+		PackageDescription:   snapshot.PackageDescription,
+		PackageDeliveryDays:  snapshot.DeliveryDays,
+		PriceCents:           snapshot.PriceCents,
+		Currency:             snapshot.Currency,
+		Status:               domain.SessionStatusRequirementsPending,
+	}
+	if _, err := s.sessions.Create(ctx, session); err != nil {
+		return err
+	}
+	for _, step := range []domain.Step{
+		{SagaID: cmd.SagaID, StepKey: domain.StepKeyCreateOrder, Status: domain.StepStatusPending},
+		{SagaID: cmd.SagaID, StepKey: domain.StepKeyCreatePaymentIntent, Status: domain.StepStatusPending},
+		{SagaID: cmd.SagaID, StepKey: domain.StepKeyAwaitPaymentWebhook, Status: domain.StepStatusPending},
+		{SagaID: cmd.SagaID, StepKey: domain.StepKeyRealtimeOrderAccepted, Status: domain.StepStatusPending},
+		{SagaID: cmd.SagaID, StepKey: domain.StepKeyRealtimePaymentReady, Status: domain.StepStatusPending},
+		{SagaID: cmd.SagaID, StepKey: domain.StepKeyRealtimeOrderConfirmed, Status: domain.StepStatusPending},
+		{SagaID: cmd.SagaID, StepKey: domain.StepKeyRealtimeOrderFailed, Status: domain.StepStatusPending},
+		{SagaID: cmd.SagaID, StepKey: domain.StepKeySendReceipt, Status: domain.StepStatusPending},
+	} {
+		if _, err := s.steps.Create(ctx, step); err != nil {
+			return err
+		}
+	}
+	orderPayload, err := protojson.Marshal(&orderflowv1.OrderCreateCommand{
+		SagaId:              cmd.SagaID,
+		OrderId:             cmd.OrderID,
+		BuyerId:             cmd.BuyerID,
+		SellerId:            snapshot.SellerID,
+		GigId:               snapshot.GigID,
+		GigTitle:            snapshot.GigTitle,
+		PackageId:           snapshot.PackageID,
+		PackageTier:         snapshot.PackageTitle,
+		PackageDescription:  snapshot.PackageDescription,
+		PackageDeliveryDays: snapshot.DeliveryDays,
+		PriceCents:          snapshot.PriceCents,
+		Currency:            snapshot.Currency,
+		IdempotencyKey:      cmd.IdempotencyKey,
+		RequestedAt:         cmd.RequestedAt,
+	})
+	if err != nil {
+		return ErrPublishCommand
+	}
+	if err := s.steps.UpdateStatus(ctx, cmd.SagaID, domain.StepKeyCreateOrder, domain.StepStatusInProgress); err != nil {
+		return err
+	}
+	if err := s.sessions.UpdateStatus(ctx, cmd.SagaID, domain.SessionStatusPendingOrder); err != nil {
+		return err
+	}
+	if err := s.broker.Publish(ctx, s.cfg.OrderCreateSubject, orderPayload); err != nil {
+		return err
+	}
+	return s.publishOrderAcceptedNotification(ctx, cmd.SagaID)
+}
+
+func (s *service) StartOrder(ctx context.Context, cmd StartOrderCommand) (*StartOrderResult, error) {
+	if cmd.RequestedAt == "" {
+		cmd.RequestedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	if strings.TrimSpace(cmd.SagaID) == "" {
+		cmd.SagaID = uuid.NewString()
+	}
+	if strings.TrimSpace(cmd.OrderID) == "" {
+		cmd.OrderID = uuid.NewString()
+	}
+	snapshot, err := s.gigs.GetOrderStartSnapshot(ctx, cmd.GigID, cmd.PackageID)
+	if err != nil {
+		return nil, err
+	}
+	if snapshot == nil {
+		return nil, ErrInvalidOrderSnapshot
+	}
+	if strings.TrimSpace(snapshot.SellerID) == strings.TrimSpace(cmd.BuyerID) {
+		return nil, ErrSelfOrderNotAllowed
+	}
+	buyerEmail, err := s.auth.GetEmailByUserID(ctx, cmd.BuyerID)
+	if err != nil {
+		return nil, err
+	}
+	session := domain.Session{
+		SagaID:               cmd.SagaID,
+		OrderID:              cmd.OrderID,
+		BuyerID:              cmd.BuyerID,
+		SellerID:             snapshot.SellerID,
+		BuyerEmail:           buyerEmail,
+		RealtimeConnectionID: cmd.RealtimeConnectionID,
+		GigID:                snapshot.GigID,
+		GigTitle:             snapshot.GigTitle,
+		PackageID:            snapshot.PackageID,
+		PackageTier:          snapshot.PackageTitle,
+		PackageDescription:   snapshot.PackageDescription,
+		PackageDeliveryDays:  snapshot.DeliveryDays,
+		PriceCents:           snapshot.PriceCents,
+		Currency:             snapshot.Currency,
+		Status:               domain.SessionStatusStarted,
+	}
+	if _, err := s.sessions.Create(ctx, session); err != nil {
+		return nil, err
+	}
+	_ = s.sessions.UpdateStatus(ctx, cmd.SagaID, domain.SessionStatusRequirementsPending)
+	if _, err := s.orders.CreateDraftOrder(ctx, CreateDraftOrderCommand{
+		SagaID:              cmd.SagaID,
+		OrderID:             cmd.OrderID,
+		BuyerID:             cmd.BuyerID,
+		SellerID:            snapshot.SellerID,
+		GigID:               snapshot.GigID,
+		GigTitle:            snapshot.GigTitle,
+		PackageID:           snapshot.PackageID,
+		PackageTier:         snapshot.PackageTitle,
+		PackageDescription:  snapshot.PackageDescription,
+		PackageDeliveryDays: snapshot.DeliveryDays,
+		PriceCents:          snapshot.PriceCents,
+		Currency:            snapshot.Currency,
+		Questions:           convertQuestions(snapshot.Questions),
+		IdempotencyKey:      cmd.IdempotencyKey,
+		RequestedAt:         cmd.RequestedAt,
+	}); err != nil {
+		return nil, err
+	}
+	return &StartOrderResult{
+		SagaID:   cmd.SagaID,
+		OrderID:  cmd.OrderID,
+		Status:   domain.SessionStatusRequirementsPending,
+		Snapshot: snapshot,
+	}, nil
+}
+
+func convertQuestions(questions []OrderStartQuestion) []OrderQuestionSnapshot {
+	out := make([]OrderQuestionSnapshot, 0, len(questions))
+	for _, q := range questions {
+		out = append(out, OrderQuestionSnapshot{
+			QuestionID:  q.ID,
+			Text:        q.Text,
+			Type:        "text",
+			Required:    true,
+			OptionsJSON: "[]",
+			SortOrder:   q.SortOrder,
+		})
+	}
+	return out
+}
+
+func (s *service) ConfirmOrder(ctx context.Context, cmd ConfirmOrderCommand) (*ConfirmOrderResult, error) {
+	if cmd.RequestedAt == "" {
+		cmd.RequestedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	snap, err := s.orders.GetOrderPaymentSnapshot(ctx, cmd.OrderID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(snap.BuyerID) != strings.TrimSpace(cmd.BuyerID) {
+		return nil, ErrOrderNotOwned
+	}
+	switch snap.Status {
+	case domain.SessionStatusRequirementsPending, domain.SessionStatusStarted:
+		// confirmable
+	case domain.SessionStatusPendingPayment:
+		return nil, ErrOrderAlreadyPaymentPending
+	case domain.SessionStatusPaymentConfirmed, domain.SessionStatusCompleted:
+		return nil, ErrOrderAlreadyFunded
+	default:
+		return nil, ErrOrderNotConfirmable
+	}
+	connect, err := s.payments.GetConnectStatus(ctx, snap.SellerID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(connect.Status) != "completed" {
+		return nil, ErrConnectOnboardingIncomplete
+	}
+	checkout, err := s.payments.CreateCheckoutSession(ctx, CreateCheckoutSessionCommand{
+		SagaID:         snap.SagaID,
+		OrderID:        snap.OrderID,
+		BuyerID:        snap.BuyerID,
+		SellerID:       snap.SellerID,
+		AmountCents:    snap.PriceCents,
+		Currency:       snap.Currency,
+		Title:          snap.GigTitle,
+		IdempotencyKey: cmd.IdempotencyKey,
+		RequestedAt:    cmd.RequestedAt,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.orders.MarkPaymentPending(ctx, MarkPaymentPendingCommand{
+		OrderID:         snap.OrderID,
+		PaymentIntentID: checkout.PaymentIntentID,
+		CheckoutURL:     checkout.CheckoutURL,
+		RequestedAt:     cmd.RequestedAt,
+	}); err != nil {
+		return nil, err
+	}
+	if err := s.sessions.UpdateStatus(ctx, snap.SagaID, domain.SessionStatusPendingPayment); err != nil {
+		return nil, err
+	}
+	return &ConfirmOrderResult{
+		SagaID:      snap.SagaID,
+		OrderID:     snap.OrderID,
+		Status:      "payment_pending",
+		CheckoutURL: checkout.CheckoutURL,
+		PaymentID:   checkout.PaymentIntentID,
+	}, nil
+}
+
+func (s *service) SubmitRequirements(ctx context.Context, cmd SubmitRequirementsCommand) (*SubmitRequirementsResult, error) {
+	if _, err := s.orders.SaveRequirementAnswers(ctx, SaveRequirementAnswersCommand{OrderID: cmd.OrderID, Answers: cmd.Answers}); err != nil {
+		return nil, err
+	}
+	return &SubmitRequirementsResult{OrderID: cmd.OrderID, Status: "requirements_completed", CurrentStep: "message_pending"}, nil
+}
+
+func (s *service) SubmitMessage(ctx context.Context, cmd SubmitMessageCommand) (*SubmitMessageResult, error) {
+	if _, err := s.orders.SaveBuyerInitialMessage(ctx, SaveBuyerInitialMessageCommand{OrderID: cmd.OrderID, Message: cmd.Message}); err != nil {
+		return nil, err
+	}
+	return &SubmitMessageResult{OrderID: cmd.OrderID, Status: "message_completed", CurrentStep: "attachments_pending"}, nil
+}
+
+func (s *service) HandleOrderCreateResult(ctx context.Context, res OrderSagaResult) error {
+	if err := s.resolveSagaID(ctx, &res.SagaID, res.OrderID); err != nil {
+		return err
+	}
+	if err := s.steps.UpdateStatus(ctx, res.SagaID, domain.StepKeyCreateOrder, stepStatusFromResult(res.Status)); err != nil {
+		return err
+	}
+	if res.Status != "success" {
+		_ = s.sessions.UpdateStatus(ctx, res.SagaID, domain.SessionStatusFailed)
+		return s.publishOrderFailedNotification(ctx, res.SagaID, "order.create", res.Error)
+	}
+	if err := s.sessions.UpdateStatus(ctx, res.SagaID, domain.SessionStatusPendingPayment); err != nil {
+		return err
+	}
+	session, err := s.sessions.GetByID(ctx, res.SagaID)
+	if err != nil {
+		return err
+	}
+	paymentPayload, err := protojson.Marshal(&paymentflowv1.PaymentIntentCommand{
+		SagaId:          session.SagaID,
+		OrderId:         session.OrderID,
+		PaymentIntentId: uuid.NewString(),
+		AmountCents:     session.PriceCents,
+		Currency:        session.Currency,
+		Provider:        "stripe",
+		IdempotencyKey:  session.SagaID + ":payment.intent",
+		RequestedAt:     time.Now().UTC().Format(time.RFC3339Nano),
+	})
+	if err != nil {
+		return ErrPublishCommand
+	}
+	if err := s.broker.Publish(ctx, s.cfg.PaymentIntentSubject, paymentPayload); err != nil {
+		return err
+	}
+	return s.publishOrderAcceptedNotification(ctx, res.SagaID)
+}
+
+func (s *service) HandlePaymentIntentResult(ctx context.Context, res PaymentIntentResult) error {
+	if err := s.resolveSagaID(ctx, &res.SagaID, res.OrderID); err != nil {
+		return err
+	}
+	if err := s.steps.UpdateStatus(ctx, res.SagaID, domain.StepKeyCreatePaymentIntent, stepStatusFromResult(res.Status)); err != nil {
+		return err
+	}
+	if res.Status != "success" && res.Status != "intent_created" {
+		_ = s.sessions.UpdateStatus(ctx, res.SagaID, domain.SessionStatusFailed)
+		return s.publishOrderFailedNotification(ctx, res.SagaID, "payment.intent", res.Error)
+	}
+	if _, err := s.orders.MarkPaymentPending(ctx, MarkPaymentPendingCommand{
+		OrderID:         res.OrderID,
+		PaymentIntentID: res.PaymentIntentID,
+		CheckoutURL:     res.CheckoutURL,
+		RequestedAt:     res.OccurredAt,
+	}); err != nil {
+		return err
+	}
+	_ = s.sessions.UpdateStatus(ctx, res.SagaID, domain.SessionStatusPendingPayment)
+	return nil
+}
+
+func (s *service) HandlePaymentStatus(ctx context.Context, evt PaymentStatusEvent) error {
+	if err := s.resolveSagaID(ctx, &evt.SagaID, evt.OrderID); err != nil {
+		return err
+	}
+	if err := s.steps.UpdateStatus(ctx, evt.SagaID, domain.StepKeyAwaitPaymentWebhook, stepStatusFromStatus(evt.Status)); err != nil {
+		return err
+	}
+	if evt.Status == "failed" || evt.Status == "payment.order_payment_failed" {
+		_ = s.sessions.UpdateStatus(ctx, evt.SagaID, domain.SessionStatusFailed)
+		if _, err := s.orders.MarkPaymentFailed(ctx, MarkPaymentFailedCommand{OrderID: evt.OrderID, Reason: evt.Error}); err != nil {
+			return err
+		}
+		if err := s.publishOrderFailedNotification(ctx, evt.SagaID, "await_payment_webhook", evt.Error); err != nil {
+			return err
+		}
+		return s.publishOrderFailedEvent(ctx, evt.SagaID, evt.OrderID, evt.Error)
+	}
+	_ = s.sessions.UpdateStatus(ctx, evt.SagaID, domain.SessionStatusCompleted)
+	if _, err := s.orders.MarkOrderFunded(ctx, MarkOrderFundedCommand{OrderID: evt.OrderID, PaymentIntentID: evt.PaymentIntentID, RequestedAt: evt.OccurredAt}); err != nil {
+		return err
+	}
+	if err := s.publishOrderConfirmedNotification(ctx, evt.SagaID, evt.PaymentIntentID); err != nil {
+		return err
+	}
+	if err := s.publishOrderFundedEvent(ctx, evt.SagaID, evt.OrderID, evt.PaymentIntentID, evt.OccurredAt); err != nil {
+		return err
+	}
+	return s.sendReceiptEmail(ctx, evt.SagaID)
+}
+
+func stepStatusFromResult(status string) string {
+	if status == "success" || status == "intent_created" {
+		return domain.StepStatusCompleted
+	}
+	return domain.StepStatusFailed
+}
+
+func stepStatusFromStatus(status string) string {
+	if status == "success" || status == "captured" || status == "paid" || status == "payment.order_payment_succeeded" {
+		return domain.StepStatusCompleted
+	}
+	return domain.StepStatusFailed
+}
+
+func (s *service) sendReceiptEmail(ctx context.Context, sagaID string) error {
+	session, err := s.sessions.GetByID(ctx, sagaID)
+	if err != nil {
+		return err
+	}
+	step, err := s.steps.GetByKey(ctx, sagaID, domain.StepKeySendReceipt)
+	switch {
+	case err == nil && step.Status == domain.StepStatusCompleted:
+		return nil
+	case err == nil:
+		if err := s.steps.UpdateStatus(ctx, sagaID, domain.StepKeySendReceipt, domain.StepStatusInProgress); err != nil {
+			return err
+		}
+	case err == domain.ErrStepNotFound:
+		if _, err := s.steps.Create(ctx, domain.Step{SagaID: sagaID, StepKey: domain.StepKeySendReceipt, Status: domain.StepStatusInProgress}); err != nil {
+			return err
+		}
+	default:
+		return err
+	}
+	priceDisplay := fmt.Sprintf("%s %d.%02d", session.Currency, session.PriceCents/100, session.PriceCents%100)
+	payload, err := s.mapr.marshal(MailSendCommand{
+		SessionID:     session.SagaID,
+		ClientID:      session.OrderID,
+		UserID:        session.BuyerID,
+		RequestID:     session.OrderID,
+		CorrelationID: session.SagaID,
+		MessageType:   "order_receipt",
+		To:            session.BuyerEmail,
+		Data: MailReceiptData{
+			BuyerEmail:          session.BuyerEmail,
+			OrderID:             session.OrderID,
+			GigTitle:            session.GigTitle,
+			PackageTier:         session.PackageTier,
+			PackageDescription:  session.PackageDescription,
+			PackageDeliveryDays: session.PackageDeliveryDays,
+			PriceCents:          session.PriceCents,
+			PriceDisplay:        priceDisplay,
+			Currency:            session.Currency,
+			Status:              session.Status,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if err := s.broker.Publish(ctx, s.cfg.MailSendSubject, payload); err != nil {
+		return err
+	}
+	if err := s.steps.UpdateStatus(ctx, sagaID, domain.StepKeySendReceipt, domain.StepStatusCompleted); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *service) resolveSagaID(ctx context.Context, sagaID *string, orderID string) error {
+	if strings.TrimSpace(*sagaID) != "" || strings.TrimSpace(orderID) == "" {
+		return nil
+	}
+	session, err := s.sessions.GetByOrderID(ctx, orderID)
+	if err != nil {
+		return err
+	}
+	*sagaID = session.SagaID
+	return nil
+}
+
+func (s *service) publishOrderAcceptedNotification(ctx context.Context, sagaID string) error {
+	step, err := s.ensureNotificationStep(ctx, sagaID, domain.StepKeyRealtimeOrderAccepted)
+	if err != nil {
+		return err
+	}
+	if step.Status == domain.StepStatusCompleted {
+		return nil
+	}
+	session, err := s.sessions.GetByID(ctx, sagaID)
+	if err != nil {
+		return err
+	}
+	priceDisplay := fmt.Sprintf("%s %d.%02d", session.Currency, session.PriceCents/100, session.PriceCents%100)
+	payload, err := s.mapr.marshal(OrderAcceptedNotification{
+		RealtimeNotificationMetadata: RealtimeNotificationMetadata{
+			SagaID:        session.SagaID,
+			OrderID:       session.OrderID,
+			UserID:        session.BuyerID,
+			ClientID:      session.RealtimeConnectionID,
+			CorrelationID: session.SagaID,
+			DedupeKey:     sagaID + ":realtime.order.accepted",
+		},
+		Kind:               "order_accepted",
+		Title:              "Order accepted",
+		Message:            "We received your order and started processing it.",
+		Severity:           "info",
+		OrderStatus:        session.Status,
+		GigTitle:           session.GigTitle,
+		PackageTier:        session.PackageTier,
+		PackageDescription: session.PackageDescription,
+		PriceDisplay:       priceDisplay,
+		ActionLabel:        "View order",
+		ActionURL:          "",
+	})
+	if err != nil {
+		return ErrPublishCommand
+	}
+	if err := s.publishRealtimeDelivery(ctx, session.RealtimeConnectionID, payload, session.BuyerID); err != nil {
+		return err
+	}
+	return s.steps.UpdateStatus(ctx, sagaID, domain.StepKeyRealtimeOrderAccepted, domain.StepStatusCompleted)
+}
+
+func (s *service) publishPaymentReadyNotification(ctx context.Context, sagaID, checkoutURL, paymentIntentID string) error {
+	step, err := s.ensureNotificationStep(ctx, sagaID, domain.StepKeyRealtimePaymentReady)
+	if err != nil {
+		return err
+	}
+	if step.Status == domain.StepStatusCompleted {
+		return nil
+	}
+	session, err := s.sessions.GetByID(ctx, sagaID)
+	if err != nil {
+		return err
+	}
+	priceDisplay := fmt.Sprintf("%s %d.%02d", session.Currency, session.PriceCents/100, session.PriceCents%100)
+	payload, err := s.mapr.marshal(PaymentReadyNotification{
+		RealtimeNotificationMetadata: RealtimeNotificationMetadata{
+			SagaID:        session.SagaID,
+			OrderID:       session.OrderID,
+			UserID:        session.BuyerID,
+			ClientID:      session.RealtimeConnectionID,
+			CorrelationID: session.SagaID,
+			DedupeKey:     sagaID + ":realtime.payment.ready",
+		},
+		Kind:               "payment_ready",
+		Title:              "Payment is ready",
+		Message:            "Your checkout link is ready. Complete payment to confirm the order.",
+		Severity:           "info",
+		CheckoutURL:        checkoutURL,
+		PaymentIntentID:    paymentIntentID,
+		GigTitle:           session.GigTitle,
+		PackageTier:        session.PackageTier,
+		PackageDescription: session.PackageDescription,
+		PriceDisplay:       priceDisplay,
+		ActionLabel:        "Pay now",
+		ActionURL:          checkoutURL,
+	})
+	if err != nil {
+		return ErrPublishCommand
+	}
+	if err := s.publishRealtimeDelivery(ctx, session.RealtimeConnectionID, payload, session.BuyerID); err != nil {
+		return err
+	}
+	return s.steps.UpdateStatus(ctx, sagaID, domain.StepKeyRealtimePaymentReady, domain.StepStatusCompleted)
+}
+
+func (s *service) publishOrderConfirmedNotification(ctx context.Context, sagaID, paymentIntentID string) error {
+	step, err := s.ensureNotificationStep(ctx, sagaID, domain.StepKeyRealtimeOrderConfirmed)
+	if err != nil {
+		return err
+	}
+	if step.Status == domain.StepStatusCompleted {
+		return nil
+	}
+	session, err := s.sessions.GetByID(ctx, sagaID)
+	if err != nil {
+		return err
+	}
+	priceDisplay := fmt.Sprintf("%s %d.%02d", session.Currency, session.PriceCents/100, session.PriceCents%100)
+	payload, err := s.mapr.marshal(OrderConfirmedNotification{
+		RealtimeNotificationMetadata: RealtimeNotificationMetadata{
+			SagaID:        session.SagaID,
+			OrderID:       session.OrderID,
+			UserID:        session.BuyerID,
+			ClientID:      session.RealtimeConnectionID,
+			CorrelationID: session.SagaID,
+			DedupeKey:     sagaID + ":realtime.order.confirmed",
+		},
+		Kind:                "order_confirmed",
+		Title:               "Order confirmed",
+		Message:             "Your payment was captured and the order is confirmed.",
+		Severity:            "success",
+		PaymentIntentID:     paymentIntentID,
+		GigTitle:            session.GigTitle,
+		PackageTier:         session.PackageTier,
+		PackageDescription:  session.PackageDescription,
+		PackageDeliveryDays: session.PackageDeliveryDays,
+		PriceDisplay:        priceDisplay,
+		ActionLabel:         "View receipt",
+	})
+	if err != nil {
+		return ErrPublishCommand
+	}
+	if err := s.publishRealtimeDelivery(ctx, session.RealtimeConnectionID, payload, session.BuyerID); err != nil {
+		return err
+	}
+	return s.steps.UpdateStatus(ctx, sagaID, domain.StepKeyRealtimeOrderConfirmed, domain.StepStatusCompleted)
+}
+
+func (s *service) publishOrderFailedNotification(ctx context.Context, sagaID, failureStep, reason string) error {
+	step, err := s.ensureNotificationStep(ctx, sagaID, domain.StepKeyRealtimeOrderFailed)
+	if err != nil {
+		return err
+	}
+	if step.Status == domain.StepStatusCompleted {
+		return nil
+	}
+	session, err := s.sessions.GetByID(ctx, sagaID)
+	if err != nil {
+		return err
+	}
+	priceDisplay := fmt.Sprintf("%s %d.%02d", session.Currency, session.PriceCents/100, session.PriceCents%100)
+	payload, err := s.mapr.marshal(OrderFailedNotification{
+		RealtimeNotificationMetadata: RealtimeNotificationMetadata{
+			SagaID:        session.SagaID,
+			OrderID:       session.OrderID,
+			UserID:        session.BuyerID,
+			ClientID:      session.RealtimeConnectionID,
+			CorrelationID: session.SagaID,
+			DedupeKey:     sagaID + ":realtime.order.failed",
+		},
+		Kind:               "order_failed",
+		Title:              "Order failed",
+		Message:            "We could not complete your order.",
+		Severity:           "error",
+		FailureStep:        failureStep,
+		Reason:             reason,
+		GigTitle:           session.GigTitle,
+		PackageTier:        session.PackageTier,
+		PackageDescription: session.PackageDescription,
+		PriceDisplay:       priceDisplay,
+		ActionLabel:        "Try again",
+	})
+	if err != nil {
+		return ErrPublishCommand
+	}
+	if err := s.publishRealtimeDelivery(ctx, session.RealtimeConnectionID, payload, session.BuyerID); err != nil {
+		return err
+	}
+	return s.steps.UpdateStatus(ctx, sagaID, domain.StepKeyRealtimeOrderFailed, domain.StepStatusCompleted)
+}
+
+func (s *service) publishRealtimeDelivery(ctx context.Context, connectionID string, payload []byte, userID string) error {
+	startupID, err := realtimeStartupID(connectionID)
+	if err != nil {
+		return err
+	}
+	delivery, err := s.mapr.marshal(realtimeDeliveryMessage{
+		ConnectionID: connectionID,
+		UserID:       userID,
+		Type:         "order.realtime",
+		Payload:      payload,
+	})
+	if err != nil {
+		return ErrPublishCommand
+	}
+	return s.broker.Publish(ctx, realtimeSubjectForStartup(startupID), delivery)
+}
+
+func realtimeStartupID(connectionID string) (string, error) {
+	startupID, _, ok := strings.Cut(strings.TrimSpace(connectionID), ".")
+	if !ok || strings.TrimSpace(startupID) == "" {
+		return "", ErrPublishCommand
+	}
+	return startupID, nil
+}
+
+func realtimeSubjectForStartup(startupID string) string {
+	return "realtime.instance." + startupID
+}
+
+func (s *service) publishOrderFundedEvent(ctx context.Context, sagaID, orderID, paymentIntentID, occurredAt string) error {
+	payload, err := protojson.Marshal(&orderflowv1.OrderConfirmedEvent{
+		SagaId:          sagaID,
+		OrderId:         orderID,
+		PaymentIntentId: paymentIntentID,
+		CheckoutUrl:     "",
+		OccurredAt:      occurredAt,
+	})
+	if err != nil {
+		return ErrPublishCommand
+	}
+	return s.broker.Publish(ctx, s.cfg.OrderConfirmSubject, payload)
+}
+
+func (s *service) publishOrderFailedEvent(ctx context.Context, sagaID, orderID, reason string) error {
+	payload, err := protojson.Marshal(&orderflowv1.OrderSagaResult{
+		SagaId:     sagaID,
+		OrderId:    orderID,
+		Status:     "failed",
+		Error:      reason,
+		Operation:  "await_payment_webhook",
+		OccurredAt: time.Now().UTC().Format(time.RFC3339Nano),
+	})
+	if err != nil {
+		return ErrPublishCommand
+	}
+	return s.broker.Publish(ctx, s.cfg.OrderFailSubject, payload)
+}
+
+func (s *service) ensureNotificationStep(ctx context.Context, sagaID, stepKey string) (*domain.Step, error) {
+	step, err := s.steps.GetByKey(ctx, sagaID, stepKey)
+	if err == nil {
+		return step, nil
+	}
+	if err != domain.ErrStepNotFound {
+		return nil, err
+	}
+	return s.steps.Create(ctx, domain.Step{SagaID: sagaID, StepKey: stepKey, Status: domain.StepStatusPending})
+}
