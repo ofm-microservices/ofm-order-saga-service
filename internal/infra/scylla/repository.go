@@ -82,7 +82,10 @@ func (r *sessionRepository) UpdateStatus(ctx context.Context, sagaID, status str
 
 func (r *stepRepository) Create(ctx context.Context, step domain.Step) (*domain.Step, error) {
 	now := time.Now().UTC()
-	if err := r.db.Query(insertStepQuery, step.SagaID, step.StepKey, step.Status, now, now).WithContext(ctx).Exec(); err != nil {
+	if step.MaxAttempts == 0 {
+		step.MaxAttempts = 6
+	}
+	if err := r.db.Query(insertStepQuery, step.SagaID, step.StepKey, step.Status, step.Attempt, step.MaxAttempts, step.NextAttemptAt, step.LockedUntil, step.LastError, step.IdempotencyKey, now, now).WithContext(ctx).Exec(); err != nil {
 		r.log.Error("create order saga step failed", logging.Operation("db.order_saga.step.create"), logging.String("saga_id", step.SagaID), logging.String("step_key", step.StepKey), logging.Err(err))
 		return nil, err
 	}
@@ -93,13 +96,13 @@ func (r *stepRepository) Create(ctx context.Context, step domain.Step) (*domain.
 
 func (r *stepRepository) GetByKey(ctx context.Context, sagaID, stepKey string) (*domain.Step, error) {
 	var row StepRow
-	if err := r.db.Query(getStepByKeyQuery, sagaID, stepKey).WithContext(ctx).Consistency(gocql.One).Scan(&row.SagaID, &row.StepKey, &row.Status, &row.CreatedAt, &row.UpdatedAt); err != nil {
+	if err := r.db.Query(getStepByKeyQuery, sagaID, stepKey).WithContext(ctx).Consistency(gocql.One).Scan(&row.SagaID, &row.StepKey, &row.Status, &row.Attempt, &row.MaxAttempts, &row.NextAttemptAt, &row.LockedUntil, &row.LastError, &row.IdempotencyKey, &row.CreatedAt, &row.UpdatedAt); err != nil {
 		if errors.Is(err, gocql.ErrNotFound) {
 			return nil, domain.ErrStepNotFound
 		}
 		return nil, err
 	}
-	return &domain.Step{SagaID: row.SagaID, StepKey: row.StepKey, Status: row.Status, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}, nil
+	return &domain.Step{SagaID: row.SagaID, StepKey: row.StepKey, Status: row.Status, Attempt: row.Attempt, MaxAttempts: row.MaxAttempts, NextAttemptAt: row.NextAttemptAt, LockedUntil: row.LockedUntil, LastError: row.LastError, IdempotencyKey: row.IdempotencyKey, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}, nil
 }
 
 func (r *stepRepository) ListBySagaID(ctx context.Context, sagaID string) ([]domain.Step, error) {
@@ -107,8 +110,8 @@ func (r *stepRepository) ListBySagaID(ctx context.Context, sagaID string) ([]dom
 	defer iter.Close()
 	var rows []domain.Step
 	var row StepRow
-	for iter.Scan(&row.SagaID, &row.StepKey, &row.Status, &row.CreatedAt, &row.UpdatedAt) {
-		rows = append(rows, domain.Step{SagaID: row.SagaID, StepKey: row.StepKey, Status: row.Status, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt})
+	for iter.Scan(&row.SagaID, &row.StepKey, &row.Status, &row.Attempt, &row.MaxAttempts, &row.NextAttemptAt, &row.LockedUntil, &row.LastError, &row.IdempotencyKey, &row.CreatedAt, &row.UpdatedAt) {
+		rows = append(rows, domain.Step{SagaID: row.SagaID, StepKey: row.StepKey, Status: row.Status, Attempt: row.Attempt, MaxAttempts: row.MaxAttempts, NextAttemptAt: row.NextAttemptAt, LockedUntil: row.LockedUntil, LastError: row.LastError, IdempotencyKey: row.IdempotencyKey, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt})
 	}
 	if err := iter.Close(); err != nil {
 		return nil, err

@@ -47,24 +47,65 @@ func (r *testSessions) GetByID(context.Context, string) (*domain.Session, error)
 func (r *testSessions) GetByOrderID(context.Context, string) (*domain.Session, error) {
 	return nil, domain.ErrSessionNotFound
 }
-func (r *testSessions) UpdateStatus(context.Context, string, string) error { return nil }
+func (r *testSessions) UpdateStatus(_ context.Context, _ string, status string) error {
+	if r.session != nil {
+		r.session.Status = status
+	}
+	return nil
+}
 
-type testSteps struct{}
+type testSteps struct {
+	statusByKey map[string]string
+}
 
 func (r *testSteps) Create(context.Context, domain.Step) (*domain.Step, error) { return nil, nil }
-func (r *testSteps) GetByKey(context.Context, string, string) (*domain.Step, error) {
-	return &domain.Step{Status: domain.StepStatusPending}, nil
+func (r *testSteps) GetByKey(_ context.Context, _ string, stepKey string) (*domain.Step, error) {
+	if r.statusByKey == nil {
+		return &domain.Step{Status: domain.StepStatusPending}, nil
+	}
+	status, ok := r.statusByKey[stepKey]
+	if !ok {
+		status = domain.StepStatusPending
+	}
+	return &domain.Step{Status: status}, nil
 }
 func (r *testSteps) ListBySagaID(context.Context, string) ([]domain.Step, error) { return nil, nil }
 func (r *testSteps) UpdateStatus(context.Context, string, string, string) error  { return nil }
 
-type testOrders struct{}
+type testOrders struct {
+	lifecycleSnapshot       *OrderLifecycleSnapshot
+	markCompletedCalls      []MarkOrderCompletedCommand
+	markPaymentFailedCalls  []MarkPaymentFailedCommand
+	markReleaseFailedCalls  []MarkReleaseFailedCommand
+	markReleasePendingCalls []MarkReleasePendingCommand
+	saveDeliveryCalls       []SaveDeliveryCommand
+	markOrderCompletedErr   error
+	markPaymentFailedErr    error
+	markReleasePendingErr   error
+}
 
 func (r *testOrders) CreateDraftOrder(context.Context, CreateDraftOrderCommand) (*CreateDraftOrderResult, error) {
 	return nil, nil
 }
 func (r *testOrders) GetOrderPaymentSnapshot(context.Context, string) (*OrderPaymentSnapshot, error) {
 	return nil, nil
+}
+func (r *testOrders) GetOrderLifecycleSnapshot(_ context.Context, _ string) (*OrderLifecycleSnapshot, error) {
+	if r.lifecycleSnapshot != nil {
+		return r.lifecycleSnapshot, nil
+	}
+	return &OrderLifecycleSnapshot{
+		OrderID:            "order-1",
+		SagaID:             "saga-1",
+		BuyerID:            "user-1",
+		SellerID:           "seller-1",
+		GigTitle:           "Logo design",
+		PackageTitle:       "Pro",
+		PackageDescription: "Fast delivery",
+		PriceCents:         2599,
+		Currency:           "USD",
+		Status:             domain.SessionStatusFunded,
+	}, nil
 }
 func (r *testOrders) SaveRequirementAnswers(context.Context, SaveRequirementAnswersCommand) (*SaveRequirementAnswersResult, error) {
 	return nil, nil
@@ -81,18 +122,68 @@ func (r *testOrders) MarkPaymentPending(context.Context, MarkPaymentPendingComma
 func (r *testOrders) MarkOrderFunded(context.Context, MarkOrderFundedCommand) (*MarkOrderFundedResult, error) {
 	return nil, nil
 }
-func (r *testOrders) MarkPaymentFailed(context.Context, MarkPaymentFailedCommand) (*MarkPaymentFailedResult, error) {
+func (r *testOrders) MarkPaymentFailed(_ context.Context, cmd MarkPaymentFailedCommand) (*MarkPaymentFailedResult, error) {
+	r.markPaymentFailedCalls = append(r.markPaymentFailedCalls, cmd)
+	if r.markPaymentFailedErr != nil {
+		return nil, r.markPaymentFailedErr
+	}
+	return &MarkPaymentFailedResult{OrderID: cmd.OrderID, Status: domain.SessionStatusFailed}, nil
+}
+func (r *testOrders) SaveDelivery(_ context.Context, cmd SaveDeliveryCommand) (*SaveDeliveryResult, error) {
+	r.saveDeliveryCalls = append(r.saveDeliveryCalls, cmd)
 	return nil, nil
+}
+func (r *testOrders) MarkReleasePending(_ context.Context, cmd MarkReleasePendingCommand) (*MarkReleasePendingResult, error) {
+	r.markReleasePendingCalls = append(r.markReleasePendingCalls, cmd)
+	if r.markReleasePendingErr != nil {
+		return nil, r.markReleasePendingErr
+	}
+	return &MarkReleasePendingResult{OrderID: cmd.OrderID, Status: domain.SessionStatusReleasePending}, nil
+}
+func (r *testOrders) RequestRevision(context.Context, RequestRevisionCommand) (*RequestRevisionResult, error) {
+	return nil, nil
+}
+func (r *testOrders) OpenDispute(context.Context, OpenDisputeCommand) (*OpenDisputeResult, error) {
+	return nil, nil
+}
+func (r *testOrders) MarkOrderCompleted(_ context.Context, cmd MarkOrderCompletedCommand) (*MarkOrderCompletedResult, error) {
+	r.markCompletedCalls = append(r.markCompletedCalls, cmd)
+	if r.markOrderCompletedErr != nil {
+		return nil, r.markOrderCompletedErr
+	}
+	return &MarkOrderCompletedResult{OrderID: cmd.OrderID, Status: domain.SessionStatusCompleted}, nil
+}
+func (r *testOrders) MarkReleaseFailed(_ context.Context, cmd MarkReleaseFailedCommand) (*MarkReleaseFailedResult, error) {
+	r.markReleaseFailedCalls = append(r.markReleaseFailedCalls, cmd)
+	return &MarkReleaseFailedResult{OrderID: cmd.OrderID, Status: domain.SessionStatusReleaseFailed}, nil
 }
 func (r *testOrders) Close() error { return nil }
 
-type testPayments struct{}
+type testPayments struct {
+	releaseCalls []ReleaseFundsCommand
+	recovery     *GetReleaseByOrderResult
+	releaseErr   error
+	recoveryErr  error
+}
 
 func (r *testPayments) GetConnectStatus(context.Context, string) (*GetConnectStatusResult, error) {
 	return nil, nil
 }
 func (r *testPayments) CreateCheckoutSession(context.Context, CreateCheckoutSessionCommand) (*CreateCheckoutSessionResult, error) {
 	return nil, nil
+}
+func (r *testPayments) ReleaseFunds(_ context.Context, cmd ReleaseFundsCommand) (*ReleaseFundsResult, error) {
+	r.releaseCalls = append(r.releaseCalls, cmd)
+	if r.releaseErr != nil {
+		return nil, r.releaseErr
+	}
+	return &ReleaseFundsResult{OrderID: cmd.OrderID, PaymentReleaseID: "release-1", StripeTransferID: "tr_1", Status: "released", OccurredAt: "2026-05-21T00:00:00Z"}, nil
+}
+func (r *testPayments) GetReleaseByOrderID(context.Context, string) (*GetReleaseByOrderResult, error) {
+	if r.recoveryErr != nil {
+		return nil, r.recoveryErr
+	}
+	return r.recovery, nil
 }
 func (r *testPayments) Close() error { return nil }
 

@@ -2,6 +2,7 @@ package nats
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/ofm-microservices/ofm-common/pkg/logging"
@@ -35,55 +36,86 @@ func NewResultSubscriber(broker app.EventBroker, svc app.Service, cfg config.NAT
 // Subscribe registers the saga consumers.
 func (s *ResultSubscriber) Subscribe(ctx context.Context) error {
 	if err := s.broker.RunPullConsumer(ctx, config.PullConsumerConfig{
-		Stream:     s.cfg.OrderEventsStream,
-		Subject:    s.cfg.OrderCreateResultSubject,
-		Durable:    orderCreateResultDurable,
-		BatchSize:  s.cfg.CommandBatchSize,
-		MaxWait:    s.cfg.CommandMaxWait,
-		Workers:    1,
-		QueueSize:  32,
-		AckWait:    30 * time.Second,
-		MaxDeliver: 5,
+		Stream:            s.cfg.OrderEventsStream,
+		Subject:           s.cfg.OrderCreateResultSubject,
+		Durable:           orderCreateResultDurable,
+		BatchSize:         s.cfg.CommandBatchSize,
+		MaxWait:           s.cfg.CommandMaxWait,
+		Workers:           1,
+		QueueSize:         32,
+		AckWait:           30 * time.Second,
+		MaxDeliver:        5,
+		DeadLetterSubject: "order.saga.dead_letter",
 	}, s.handleOrderCreateResult); err != nil {
 		return err
 	}
 	if err := s.broker.RunPullConsumer(ctx, config.PullConsumerConfig{
-		Stream:     s.cfg.PaymentEventsStream,
-		Subject:    s.cfg.PaymentIntentResultSubject,
-		Durable:    paymentIntentResultDurable,
-		BatchSize:  s.cfg.CommandBatchSize,
-		MaxWait:    s.cfg.CommandMaxWait,
-		Workers:    1,
-		QueueSize:  32,
-		AckWait:    30 * time.Second,
-		MaxDeliver: 5,
+		Stream:            s.cfg.PaymentEventsStream,
+		Subject:           s.cfg.PaymentIntentResultSubject,
+		Durable:           paymentIntentResultDurable,
+		BatchSize:         s.cfg.CommandBatchSize,
+		MaxWait:           s.cfg.CommandMaxWait,
+		Workers:           1,
+		QueueSize:         32,
+		AckWait:           30 * time.Second,
+		MaxDeliver:        5,
+		DeadLetterSubject: "order.saga.dead_letter",
 	}, s.handlePaymentIntentResult); err != nil {
 		return err
 	}
 	if err := s.broker.RunPullConsumer(ctx, config.PullConsumerConfig{
-		Stream:     s.cfg.PaymentEventsStream,
-		Subject:    s.cfg.PaymentOrderSucceededSubject,
-		Durable:    paymentOrderSucceededDurable,
-		BatchSize:  s.cfg.CommandBatchSize,
-		MaxWait:    s.cfg.CommandMaxWait,
-		Workers:    1,
-		QueueSize:  32,
-		AckWait:    30 * time.Second,
-		MaxDeliver: 5,
+		Stream:            s.cfg.PaymentEventsStream,
+		Subject:           s.cfg.PaymentOrderSucceededSubject,
+		Durable:           paymentOrderSucceededDurable,
+		BatchSize:         s.cfg.CommandBatchSize,
+		MaxWait:           s.cfg.CommandMaxWait,
+		Workers:           1,
+		QueueSize:         32,
+		AckWait:           30 * time.Second,
+		MaxDeliver:        5,
+		DeadLetterSubject: "order.saga.dead_letter",
 	}, s.handlePaymentStatus); err != nil {
 		return err
 	}
 	if err := s.broker.RunPullConsumer(ctx, config.PullConsumerConfig{
-		Stream:     s.cfg.PaymentEventsStream,
-		Subject:    s.cfg.PaymentOrderFailedSubject,
-		Durable:    paymentOrderFailedDurable,
+		Stream:            s.cfg.PaymentEventsStream,
+		Subject:           s.cfg.PaymentOrderFailedSubject,
+		Durable:           paymentOrderFailedDurable,
+		BatchSize:         s.cfg.CommandBatchSize,
+		MaxWait:           s.cfg.CommandMaxWait,
+		Workers:           1,
+		QueueSize:         32,
+		AckWait:           30 * time.Second,
+		MaxDeliver:        5,
+		DeadLetterSubject: "order.saga.dead_letter",
+	}, s.handlePaymentStatus); err != nil {
+		return err
+	}
+	if err := s.broker.RunPullConsumer(ctx, config.PullConsumerConfig{
+		Stream:            s.cfg.OrderCommandsStream,
+		Subject:           s.cfg.OrderReleaseRequestSubject,
+		Durable:           "order_release_request_durable",
+		BatchSize:         s.cfg.CommandBatchSize,
+		MaxWait:           s.cfg.CommandMaxWait,
+		Workers:           1,
+		QueueSize:         32,
+		AckWait:           30 * time.Second,
+		MaxDeliver:        6,
+		DeadLetterSubject: "order.saga.dead_letter",
+	}, s.handleReleaseFundsRequest); err != nil {
+		return err
+	}
+	if err := s.broker.RunPullConsumer(ctx, config.PullConsumerConfig{
+		Stream:     s.cfg.OrderEventsStream,
+		Subject:    "order.saga.dead_letter",
+		Durable:    "order_saga_dead_letter_durable",
 		BatchSize:  s.cfg.CommandBatchSize,
 		MaxWait:    s.cfg.CommandMaxWait,
 		Workers:    1,
 		QueueSize:  32,
 		AckWait:    30 * time.Second,
-		MaxDeliver: 5,
-	}, s.handlePaymentStatus); err != nil {
+		MaxDeliver: 1,
+	}, s.handleDeadLetter); err != nil {
 		return err
 	}
 	return nil
@@ -134,4 +166,23 @@ func (s *ResultSubscriber) handlePaymentStatus(ctx context.Context, _ string, pa
 		Error:           msg.GetError(),
 		OccurredAt:      msg.GetOccurredAt(),
 	})
+}
+
+type releaseFundsRequestMessage struct {
+	SagaID      string `json:"saga_id"`
+	OrderID     string `json:"order_id"`
+	RequestedAt string `json:"requested_at"`
+}
+
+func (s *ResultSubscriber) handleReleaseFundsRequest(ctx context.Context, _ string, payload []byte) error {
+	var msg releaseFundsRequestMessage
+	if err := json.Unmarshal(payload, &msg); err != nil {
+		return err
+	}
+	return s.svc.HandleReleaseFunds(ctx, msg.OrderID)
+}
+
+func (s *ResultSubscriber) handleDeadLetter(ctx context.Context, _ string, payload []byte) error {
+	s.log.Error("dead letter received", logging.String("payload", string(payload)))
+	return nil
 }
