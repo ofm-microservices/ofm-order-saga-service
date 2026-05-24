@@ -35,4 +35,14 @@ var (
 	ErrOrderAlreadyFunded = errors.New("order already funded")
 	// ErrConnectOnboardingIncomplete reports the seller cannot receive payment yet.
 	ErrConnectOnboardingIncomplete = errors.New("connect onboarding incomplete")
+	// ErrOrderNotDeliverable reports that the order cannot accept seller delivery yet.
+	ErrOrderNotDeliverable = errors.New("order not deliverable")
+	// ErrOrderNotAcceptable reports that the order cannot be accepted yet.
+	ErrOrderNotAcceptable = errors.New("order not acceptable")
+	// ErrOrderNotRevisionable reports that the order cannot accept a revision request.
+	ErrOrderNotRevisionable = errors.New("order not revisionable")
+	// ErrOrderNotDisputable reports that the order cannot be disputed yet.
+	ErrOrderNotDisputable = errors.New("order not disputable")
+	// ErrOrderReleaseFailed reports that the payout release failed.
+	ErrOrderReleaseFailed = errors.New("order release failed")
 )

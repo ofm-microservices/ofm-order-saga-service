@@ -25,9 +25,15 @@ type SessionRow struct {
 
 // StepRow is the Scylla persistence model for order saga steps.
 type StepRow struct {
-	SagaID    string
-	StepKey   string
-	Status    string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	SagaID         string
+	StepKey        string
+	Status         string
+	Attempt        int32
+	MaxAttempts    int32
+	NextAttemptAt  *time.Time
+	LockedUntil    *time.Time
+	LastError      string
+	IdempotencyKey string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }

@@ -2,6 +2,8 @@ package nats
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -34,6 +36,14 @@ func NewBroker(cfg config.NATSConfig, log logging.Logger) (eb.EventBroker, error
 
 // Publish writes one command or event to NATS.
 func (b *broker) Publish(_ context.Context, subject string, payload []byte) error {
+	js, err := b.conn.JetStream()
+	if err == nil {
+		msgID := sha256.Sum256(append([]byte(subject+":"), payload...))
+		_, err = js.Publish(subject, payload, nats.MsgId(hex.EncodeToString(msgID[:])))
+		if err == nil {
+			return nil
+		}
+	}
 	if err := b.conn.Publish(subject, payload); err != nil {
 		return err
 	}
@@ -87,6 +97,13 @@ func (b *broker) RunPullConsumer(_ context.Context, cfg config.PullConsumerConfi
 			for _, msg := range msgs {
 				if err := handler(context.Background(), msg.Subject, msg.Data); err != nil {
 					b.log.Error("pull consumer handler failed", logging.String("subject", msg.Subject), logging.Err(err))
+					if cfg.DeadLetterSubject != "" {
+						if md, mdErr := msg.Metadata(); mdErr == nil && int(md.NumDelivered) >= cfg.MaxDeliver {
+							_ = b.Publish(context.Background(), cfg.DeadLetterSubject, msg.Data)
+							_ = msg.Ack()
+							continue
+						}
+					}
 					_ = msg.Nak()
 					continue
 				}

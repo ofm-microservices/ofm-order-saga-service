@@ -20,6 +20,13 @@ type Client interface {
 	MarkOrderFunded(ctx context.Context, cmd app.MarkOrderFundedCommand) (*app.MarkOrderFundedResult, error)
 	MarkPaymentFailed(ctx context.Context, cmd app.MarkPaymentFailedCommand) (*app.MarkPaymentFailedResult, error)
 	GetOrderPaymentSnapshot(ctx context.Context, orderID string) (*app.OrderPaymentSnapshot, error)
+	GetOrderLifecycleSnapshot(ctx context.Context, orderID string) (*app.OrderLifecycleSnapshot, error)
+	SaveDelivery(ctx context.Context, cmd app.SaveDeliveryCommand) (*app.SaveDeliveryResult, error)
+	MarkReleasePending(ctx context.Context, cmd app.MarkReleasePendingCommand) (*app.MarkReleasePendingResult, error)
+	RequestRevision(ctx context.Context, cmd app.RequestRevisionCommand) (*app.RequestRevisionResult, error)
+	OpenDispute(ctx context.Context, cmd app.OpenDisputeCommand) (*app.OpenDisputeResult, error)
+	MarkOrderCompleted(ctx context.Context, cmd app.MarkOrderCompletedCommand) (*app.MarkOrderCompletedResult, error)
+	MarkReleaseFailed(ctx context.Context, cmd app.MarkReleaseFailedCommand) (*app.MarkReleaseFailedResult, error)
 	Close() error
 }
 

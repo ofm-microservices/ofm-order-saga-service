@@ -6,7 +6,7 @@ const (
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-getSessionByIDQuery = `
+	getSessionByIDQuery = `
 		SELECT saga_id, order_id, buyer_id, seller_id, buyer_email, realtime_connection_id, gig_id, gig_title, package_id, package_tier, package_description, package_delivery_days, price_cents, currency, status, created_at, updated_at
 		FROM order_saga_sessions
 		WHERE saga_id = ?
@@ -27,19 +27,19 @@ getSessionByIDQuery = `
 	`
 
 	insertStepQuery = `
-		INSERT INTO order_saga_steps (saga_id, step_key, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO order_saga_steps (saga_id, step_key, status, attempt, max_attempts, next_attempt_at, locked_until, last_error, idempotency_key, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	getStepByKeyQuery = `
-		SELECT saga_id, step_key, status, created_at, updated_at
+		SELECT saga_id, step_key, status, attempt, max_attempts, next_attempt_at, locked_until, last_error, idempotency_key, created_at, updated_at
 		FROM order_saga_steps
 		WHERE saga_id = ? AND step_key = ?
 		LIMIT 1
 	`
 
 	listStepsBySagaIDQuery = `
-		SELECT saga_id, step_key, status, created_at, updated_at
+		SELECT saga_id, step_key, status, attempt, max_attempts, next_attempt_at, locked_until, last_error, idempotency_key, created_at, updated_at
 		FROM order_saga_steps
 		WHERE saga_id = ?
 	`
