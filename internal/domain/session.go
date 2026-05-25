@@ -78,6 +78,8 @@ const (
 	StepKeyRealtimeDisputed = "realtime.order.disputed"
 	// StepKeyRealtimeCompleted identifies the completion realtime notification.
 	StepKeyRealtimeCompleted = "realtime.order.completed"
+	// StepKeyRealtimeReviewPrompt identifies the review prompt realtime notification.
+	StepKeyRealtimeReviewPrompt = "realtime.order.review_prompt"
 	// StepKeySendLifecycleMail identifies lifecycle notification emails.
 	StepKeySendLifecycleMail = "mail.order_lifecycle"
 )
