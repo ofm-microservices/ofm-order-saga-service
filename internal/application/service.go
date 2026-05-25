@@ -410,6 +410,7 @@ func (s *service) HandleReleaseFunds(ctx context.Context, orderID string) error 
 		_ = s.publishOrderLifecycle(ctx, snap.SagaID, domain.StepKeyAcceptDelivery, domain.SessionStatusCompleted, "order_completed", "Your order has been completed.", "success", snap, snap.BuyerID, true)
 		_ = s.publishLifecycleMail(ctx, snap, domain.SessionStatusCompleted, snap.BuyerID, "order_completed_buyer", "order_completed", "Your order has been completed.")
 		_ = s.publishLifecycleMail(ctx, snap, domain.SessionStatusCompleted, snap.SellerID, "order_completed_seller", "order_completed", "The buyer accepted the delivery and funds were released.")
+		_ = s.publishReviewPrompt(ctx, snap)
 		return nil
 	}
 	releaseResult, err := s.payments.ReleaseFunds(ctx, ReleaseFundsCommand{
@@ -435,6 +436,9 @@ func (s *service) HandleReleaseFunds(ctx context.Context, orderID string) error 
 		return err
 	}
 	if err := s.publishLifecycleMail(ctx, snap, domain.SessionStatusCompleted, snap.SellerID, "order_completed_seller", "order_completed", "The buyer accepted the delivery and funds were released."); err != nil {
+		return err
+	}
+	if err := s.publishReviewPrompt(ctx, snap); err != nil {
 		return err
 	}
 	return nil
@@ -710,6 +714,37 @@ func (s *service) publishOrderLifecycle(ctx context.Context, sagaID, stepKey, or
 	return nil
 }
 
+func (s *service) publishReviewPrompt(ctx context.Context, snap *OrderLifecycleSnapshot) error {
+	step, err := s.ensureNotificationStep(ctx, snap.SagaID, domain.StepKeyRealtimeReviewPrompt)
+	if err != nil {
+		return err
+	}
+	if step.Status == domain.StepStatusCompleted {
+		return nil
+	}
+	payload, err := s.mapr.marshal(ReviewPromptNotification{
+		RealtimeNotificationMetadata: RealtimeNotificationMetadata{
+			SagaID:        snap.SagaID,
+			OrderID:       snap.OrderID,
+			UserID:        snap.BuyerID,
+			CorrelationID: snap.SagaID,
+			DedupeKey:     snap.SagaID + ":" + domain.StepKeyRealtimeReviewPrompt,
+		},
+		Kind:        "review_prompt",
+		Title:       "Leave a review",
+		Message:     "Your order is complete. You can now leave a review for the gig.",
+		Severity:    "info",
+		ActionLabel: "Leave review",
+	})
+	if err != nil {
+		return ErrPublishCommand
+	}
+	if err := s.publishUserRealtimeDelivery(ctx, snap.BuyerID, payload); err != nil {
+		return err
+	}
+	return s.steps.UpdateStatus(ctx, snap.SagaID, domain.StepKeyRealtimeReviewPrompt, domain.StepStatusCompleted)
+}
+
 func titleForLifecycleKind(kind string) string {
 	switch kind {
 	case "order_delivered":
@@ -725,6 +760,16 @@ func titleForLifecycleKind(kind string) string {
 	default:
 		return "Order update"
 	}
+}
+
+type ReviewPromptNotification struct {
+	RealtimeNotificationMetadata
+	Kind        string `json:"kind"`
+	Title       string `json:"title"`
+	Message     string `json:"message"`
+	Severity    string `json:"severity"`
+	ActionLabel string `json:"action_label"`
+	ActionURL   string `json:"action_url,omitempty"`
 }
 
 func (s *service) publishLifecycleMail(ctx context.Context, snap *OrderLifecycleSnapshot, orderStatus, userID, messageType, kind, message string) error {
