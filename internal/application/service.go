@@ -73,10 +73,10 @@ func (s *service) Start(ctx context.Context, cmd OrderSagaCommand) error {
 		cmd.RequestedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	}
 	if strings.TrimSpace(cmd.SagaID) == "" {
-		cmd.SagaID = uuid.NewString()
+		cmd.SagaID = uuid.Must(uuid.NewV7()).String()
 	}
 	if strings.TrimSpace(cmd.OrderID) == "" {
-		cmd.OrderID = uuid.NewString()
+		cmd.OrderID = uuid.Must(uuid.NewV7()).String()
 	}
 	snapshot, err := s.gigs.GetOrderStartSnapshot(ctx, cmd.GigID, cmd.PackageID)
 	if err != nil {
@@ -162,10 +162,10 @@ func (s *service) StartOrder(ctx context.Context, cmd StartOrderCommand) (*Start
 		cmd.RequestedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	}
 	if strings.TrimSpace(cmd.SagaID) == "" {
-		cmd.SagaID = uuid.NewString()
+		cmd.SagaID = uuid.Must(uuid.NewV7()).String()
 	}
 	if strings.TrimSpace(cmd.OrderID) == "" {
-		cmd.OrderID = uuid.NewString()
+		cmd.OrderID = uuid.Must(uuid.NewV7()).String()
 	}
 	snapshot, err := s.gigs.GetOrderStartSnapshot(ctx, cmd.GigID, cmd.PackageID)
 	if err != nil {
@@ -532,7 +532,7 @@ func (s *service) HandleOrderCreateResult(ctx context.Context, res OrderSagaResu
 	paymentPayload, err := protojson.Marshal(&paymentflowv1.PaymentIntentCommand{
 		SagaId:          session.SagaID,
 		OrderId:         session.OrderID,
-		PaymentIntentId: uuid.NewString(),
+		PaymentIntentId: uuid.Must(uuid.NewV7()).String(),
 		AmountCents:     session.PriceCents,
 		Currency:        session.Currency,
 		Provider:        "stripe",
