@@ -90,6 +90,7 @@ type Session struct {
 	OrderID              string
 	BuyerID              string
 	SellerID             string
+	SellerUsername       string
 	BuyerEmail           string
 	RealtimeConnectionID string
 	GigID                string
