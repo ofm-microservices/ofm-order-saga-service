@@ -97,6 +97,7 @@ func (s *service) Start(ctx context.Context, cmd OrderSagaCommand) error {
 		OrderID:              cmd.OrderID,
 		BuyerID:              cmd.BuyerID,
 		SellerID:             snapshot.SellerID,
+		SellerUsername:       snapshot.SellerUsername,
 		BuyerEmail:           buyerEmail,
 		RealtimeConnectionID: cmd.RealtimeConnectionID,
 		GigID:                snapshot.GigID,
@@ -131,6 +132,7 @@ func (s *service) Start(ctx context.Context, cmd OrderSagaCommand) error {
 		OrderId:             cmd.OrderID,
 		BuyerId:             cmd.BuyerID,
 		SellerId:            snapshot.SellerID,
+		SellerUsername:      snapshot.SellerUsername,
 		GigId:               snapshot.GigID,
 		GigTitle:            snapshot.GigTitle,
 		PackageId:           snapshot.PackageID,
@@ -186,6 +188,7 @@ func (s *service) StartOrder(ctx context.Context, cmd StartOrderCommand) (*Start
 		OrderID:              cmd.OrderID,
 		BuyerID:              cmd.BuyerID,
 		SellerID:             snapshot.SellerID,
+		SellerUsername:       snapshot.SellerUsername,
 		BuyerEmail:           buyerEmail,
 		RealtimeConnectionID: cmd.RealtimeConnectionID,
 		GigID:                snapshot.GigID,
@@ -207,6 +210,7 @@ func (s *service) StartOrder(ctx context.Context, cmd StartOrderCommand) (*Start
 		OrderID:             cmd.OrderID,
 		BuyerID:             cmd.BuyerID,
 		SellerID:            snapshot.SellerID,
+		SellerUsername:      snapshot.SellerUsername,
 		GigID:               snapshot.GigID,
 		GigTitle:            snapshot.GigTitle,
 		PackageID:           snapshot.PackageID,
@@ -410,6 +414,13 @@ func (s *service) HandleReleaseFunds(ctx context.Context, orderID string) error 
 		_ = s.publishOrderLifecycle(ctx, snap.SagaID, domain.StepKeyAcceptDelivery, domain.SessionStatusCompleted, "order_completed", "Your order has been completed.", "success", snap, snap.BuyerID, true)
 		_ = s.publishLifecycleMail(ctx, snap, domain.SessionStatusCompleted, snap.BuyerID, "order_completed_buyer", "order_completed", "Your order has been completed.")
 		_ = s.publishLifecycleMail(ctx, snap, domain.SessionStatusCompleted, snap.SellerID, "order_completed_seller", "order_completed", "The buyer accepted the delivery and funds were released.")
+		s.log.Info("order completed",
+			logging.Operation("order.completed"),
+			logging.String("order_id", snap.OrderID),
+			logging.String("gig_id", snap.GigID),
+			logging.String("buyer_id", snap.BuyerID),
+			logging.String("seller_id", snap.SellerID),
+		)
 		_ = s.publishReviewPrompt(ctx, snap)
 		return nil
 	}
@@ -438,6 +449,13 @@ func (s *service) HandleReleaseFunds(ctx context.Context, orderID string) error 
 	if err := s.publishLifecycleMail(ctx, snap, domain.SessionStatusCompleted, snap.SellerID, "order_completed_seller", "order_completed", "The buyer accepted the delivery and funds were released."); err != nil {
 		return err
 	}
+	s.log.Info("order completed",
+		logging.Operation("order.completed"),
+		logging.String("order_id", snap.OrderID),
+		logging.String("gig_id", snap.GigID),
+		logging.String("buyer_id", snap.BuyerID),
+		logging.String("seller_id", snap.SellerID),
+	)
 	if err := s.publishReviewPrompt(ctx, snap); err != nil {
 		return err
 	}

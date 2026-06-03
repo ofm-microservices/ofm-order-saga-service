@@ -43,7 +43,23 @@ func (c *client) CreateDraftOrder(ctx context.Context, cmd app.CreateDraftOrderC
 		})
 	}
 	res, err := c.cl.CreateDraftOrder(ctx, &orderwritev1.CreateDraftOrderRequest{
-		SagaId: cmd.SagaID, OrderId: cmd.OrderID, BuyerUserId: cmd.BuyerID, SellerUserId: cmd.SellerID, GigId: cmd.GigID, GigTitleSnapshot: cmd.GigTitle, PackageId: cmd.PackageID, PackageTitleSnapshot: cmd.PackageTier, PackageDescriptionSnapshot: cmd.PackageDescription, PriceAmountSnapshot: cmd.PriceCents, PriceCurrencySnapshot: cmd.Currency, DeliveryDaysSnapshot: cmd.PackageDeliveryDays, RevisionCountSnapshot: 0, Questions: questions, IdempotencyKey: cmd.IdempotencyKey, RequestedAt: cmd.RequestedAt,
+		SagaId:                     cmd.SagaID,
+		OrderId:                    cmd.OrderID,
+		BuyerUserId:                cmd.BuyerID,
+		SellerUserId:               cmd.SellerID,
+		SellerUsername:             cmd.SellerUsername,
+		GigId:                      cmd.GigID,
+		GigTitleSnapshot:           cmd.GigTitle,
+		PackageId:                  cmd.PackageID,
+		PackageTitleSnapshot:       cmd.PackageTier,
+		PackageDescriptionSnapshot: cmd.PackageDescription,
+		PriceAmountSnapshot:        cmd.PriceCents,
+		PriceCurrencySnapshot:      cmd.Currency,
+		DeliveryDaysSnapshot:       cmd.PackageDeliveryDays,
+		RevisionCountSnapshot:      0,
+		Questions:                  questions,
+		IdempotencyKey:             cmd.IdempotencyKey,
+		RequestedAt:                cmd.RequestedAt,
 	})
 	if err != nil {
 		return nil, err
@@ -129,6 +145,7 @@ func (c *client) GetOrderLifecycleSnapshot(ctx context.Context, orderID string) 
 		SagaID:                o.GetSagaId(),
 		BuyerID:               o.GetBuyerUserId(),
 		SellerID:              o.GetSellerUserId(),
+		SellerUsername:        o.GetSellerUsername(),
 		GigID:                 o.GetGigId(),
 		GigTitle:              o.GetGigTitleSnapshot(),
 		PackageID:             o.GetPackageId(),
@@ -205,7 +222,7 @@ func (c *client) GetOrderPaymentSnapshot(ctx context.Context, orderID string) (*
 	if o == nil {
 		return nil, nil
 	}
-	return &app.OrderPaymentSnapshot{OrderID: o.GetOrderId(), SagaID: o.GetSagaId(), BuyerID: o.GetBuyerUserId(), SellerID: o.GetSellerUserId(), GigTitle: o.GetGigTitleSnapshot(), PackageTitle: o.GetPackageTitleSnapshot(), PriceCents: o.GetPriceAmountSnapshot(), Currency: o.GetPriceCurrencySnapshot(), Status: o.GetStatus()}, nil
+	return &app.OrderPaymentSnapshot{OrderID: o.GetOrderId(), SagaID: o.GetSagaId(), BuyerID: o.GetBuyerUserId(), SellerID: o.GetSellerUserId(), SellerUsername: o.GetSellerUsername(), GigTitle: o.GetGigTitleSnapshot(), PackageTitle: o.GetPackageTitleSnapshot(), PriceCents: o.GetPriceAmountSnapshot(), Currency: o.GetPriceCurrencySnapshot(), Status: o.GetStatus()}, nil
 }
 
 func (c *client) Close() error {

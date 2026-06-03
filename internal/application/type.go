@@ -99,6 +99,7 @@ type OrderSagaCommand struct {
 	RealtimeConnectionID string `json:"realtime_connection_id,omitempty"`
 	GigID                string `json:"gig_id"`
 	PackageID            string `json:"package_id"`
+	SellerUsername       string `json:"seller_username,omitempty"`
 	IdempotencyKey       string `json:"idempotency_key"`
 	RequestedAt          string `json:"requested_at"`
 }
@@ -112,6 +113,7 @@ type StartOrderCommand struct {
 	RealtimeConnectionID string
 	GigID                string
 	PackageID            string
+	SellerUsername       string
 	IdempotencyKey       string
 	RequestedAt          string
 }
@@ -181,6 +183,7 @@ type CreateDraftOrderCommand struct {
 	OrderID             string
 	BuyerID             string
 	SellerID            string
+	SellerUsername      string
 	GigID               string
 	GigTitle            string
 	PackageID           string
@@ -254,15 +257,16 @@ type AttachFileResult struct {
 
 // OrderPaymentSnapshot returns the payment-facing snapshot from order-service.
 type OrderPaymentSnapshot struct {
-	OrderID      string
-	SagaID       string
-	BuyerID      string
-	SellerID     string
-	GigTitle     string
-	PackageTitle string
-	PriceCents   int64
-	Currency     string
-	Status       string
+	OrderID        string
+	SagaID         string
+	BuyerID        string
+	SellerID       string
+	SellerUsername string
+	GigTitle       string
+	PackageTitle   string
+	PriceCents     int64
+	Currency       string
+	Status         string
 }
 
 // MarkPaymentPendingCommand records the payment checkout session.
@@ -367,6 +371,7 @@ type OrderStartSnapshot struct {
 	GigID              string
 	PackageID          string
 	SellerID           string
+	SellerUsername     string
 	GigTitle           string
 	PackageTitle       string
 	PackageDescription string
@@ -393,6 +398,7 @@ type OrderLifecycleSnapshot struct {
 	SagaID                string
 	BuyerID               string
 	SellerID              string
+	SellerUsername        string
 	GigID                 string
 	GigTitle              string
 	PackageID             string
