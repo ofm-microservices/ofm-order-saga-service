@@ -105,6 +105,8 @@ func TestClientMapsSnapshotLookups(t *testing.T) {
 			PriceCurrencySnapshot: "usd",
 			Status:                "funded",
 		},
+		RequirementsCompleted: true,
+		MessageCompleted:      true,
 	}, nil)
 
 	c := &client{cl: mockCl}

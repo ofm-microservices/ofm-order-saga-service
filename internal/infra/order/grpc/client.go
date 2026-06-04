@@ -223,7 +223,20 @@ func (c *client) GetOrderPaymentSnapshot(ctx context.Context, orderID string) (*
 	if o == nil {
 		return nil, nil
 	}
-	return &app.OrderPaymentSnapshot{OrderID: o.GetOrderId(), SagaID: o.GetSagaId(), BuyerID: o.GetBuyerUserId(), SellerID: o.GetSellerUserId(), SellerUsername: o.GetSellerUsername(), GigTitle: o.GetGigTitleSnapshot(), PackageTitle: o.GetPackageTitleSnapshot(), PriceCents: o.GetPriceAmountSnapshot(), Currency: o.GetPriceCurrencySnapshot(), Status: o.GetStatus()}, nil
+	return &app.OrderPaymentSnapshot{
+		OrderID:               o.GetOrderId(),
+		SagaID:                o.GetSagaId(),
+		BuyerID:               o.GetBuyerUserId(),
+		SellerID:              o.GetSellerUserId(),
+		SellerUsername:        o.GetSellerUsername(),
+		GigTitle:              o.GetGigTitleSnapshot(),
+		PackageTitle:          o.GetPackageTitleSnapshot(),
+		PriceCents:            o.GetPriceAmountSnapshot(),
+		Currency:              o.GetPriceCurrencySnapshot(),
+		Status:                o.GetStatus(),
+		RequirementsCompleted: res.GetRequirementsCompleted(),
+		MessageCompleted:      res.GetMessageCompleted(),
+	}, nil
 }
 
 func (c *client) Close() error {

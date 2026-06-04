@@ -259,6 +259,12 @@ func (s *service) ConfirmOrder(ctx context.Context, cmd ConfirmOrderCommand) (*C
 	if err != nil {
 		return nil, err
 	}
+	if !snap.RequirementsCompleted {
+		return nil, ErrOrderRequirementsIncomplete
+	}
+	if !snap.MessageCompleted {
+		return nil, ErrOrderMessageIncomplete
+	}
 	if strings.TrimSpace(snap.BuyerID) != strings.TrimSpace(cmd.BuyerID) {
 		return nil, ErrOrderNotOwned
 	}
