@@ -142,6 +142,26 @@ func (mr *MockOrderWriteServiceClientMockRecorder) GetOrderPreviewByID(ctx, in a
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOrderPreviewByID", reflect.TypeOf((*MockOrderWriteServiceClient)(nil).GetOrderPreviewByID), varargs...)
 }
 
+// GetOrderRequirementsByID mocks base method.
+func (m *MockOrderWriteServiceClient) GetOrderRequirementsByID(ctx context.Context, in *v1.GetOrderRequirementsByIDRequest, opts ...grpc.CallOption) (*v1.GetOrderRequirementsByIDResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "GetOrderRequirementsByID", varargs...)
+	ret0, _ := ret[0].(*v1.GetOrderRequirementsByIDResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetOrderRequirementsByID indicates an expected call of GetOrderRequirementsByID.
+func (mr *MockOrderWriteServiceClientMockRecorder) GetOrderRequirementsByID(ctx, in any, opts ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOrderRequirementsByID", reflect.TypeOf((*MockOrderWriteServiceClient)(nil).GetOrderRequirementsByID), varargs...)
+}
+
 // MarkOrderCompleted mocks base method.
 func (m *MockOrderWriteServiceClient) MarkOrderCompleted(ctx context.Context, in *v1.MarkOrderCompletedRequest, opts ...grpc.CallOption) (*v1.MarkOrderCompletedResponse, error) {
 	m.ctrl.T.Helper()
@@ -444,6 +464,21 @@ func (m *MockOrderWriteServiceServer) GetOrderPaymentSnapshot(arg0 context.Conte
 func (mr *MockOrderWriteServiceServerMockRecorder) GetOrderPaymentSnapshot(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOrderPaymentSnapshot", reflect.TypeOf((*MockOrderWriteServiceServer)(nil).GetOrderPaymentSnapshot), arg0, arg1)
+}
+
+// GetOrderRequirementsByID mocks base method.
+func (m *MockOrderWriteServiceServer) GetOrderRequirementsByID(arg0 context.Context, arg1 *v1.GetOrderRequirementsByIDRequest) (*v1.GetOrderRequirementsByIDResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetOrderRequirementsByID", arg0, arg1)
+	ret0, _ := ret[0].(*v1.GetOrderRequirementsByIDResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetOrderRequirementsByID indicates an expected call of GetOrderRequirementsByID.
+func (mr *MockOrderWriteServiceServerMockRecorder) GetOrderRequirementsByID(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOrderRequirementsByID", reflect.TypeOf((*MockOrderWriteServiceServer)(nil).GetOrderRequirementsByID), arg0, arg1)
 }
 
 // MarkOrderCompleted mocks base method.
