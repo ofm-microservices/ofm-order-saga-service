@@ -258,16 +258,18 @@ type AttachFileResult struct {
 
 // OrderPaymentSnapshot returns the payment-facing snapshot from order-service.
 type OrderPaymentSnapshot struct {
-	OrderID        string
-	SagaID         string
-	BuyerID        string
-	SellerID       string
-	SellerUsername string
-	GigTitle       string
-	PackageTitle   string
-	PriceCents     int64
-	Currency       string
-	Status         string
+	OrderID               string
+	SagaID                string
+	BuyerID               string
+	SellerID              string
+	SellerUsername        string
+	GigTitle              string
+	PackageTitle          string
+	PriceCents            int64
+	Currency              string
+	Status                string
+	RequirementsCompleted bool
+	MessageCompleted      bool
 }
 
 // MarkPaymentPendingCommand records the payment checkout session.
