@@ -13,6 +13,7 @@ type SessionRow struct {
 	RealtimeConnectionID string
 	GigID                string
 	GigTitle             string
+	PictureFileID        string
 	PackageID            string
 	PackageTier          string
 	PackageDescription   string

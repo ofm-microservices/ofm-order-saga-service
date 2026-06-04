@@ -186,6 +186,7 @@ type CreateDraftOrderCommand struct {
 	SellerUsername      string
 	GigID               string
 	GigTitle            string
+	PictureFileID       string
 	PackageID           string
 	PackageTier         string
 	PackageDescription  string
@@ -373,6 +374,7 @@ type OrderStartSnapshot struct {
 	SellerID           string
 	SellerUsername     string
 	GigTitle           string
+	PictureFileID      string
 	PackageTitle       string
 	PackageDescription string
 	PriceCents         int64

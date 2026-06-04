@@ -50,6 +50,7 @@ func (c *client) CreateDraftOrder(ctx context.Context, cmd app.CreateDraftOrderC
 		SellerUsername:             cmd.SellerUsername,
 		GigId:                      cmd.GigID,
 		GigTitleSnapshot:           cmd.GigTitle,
+		PictureFileId:              cmd.PictureFileID,
 		PackageId:                  cmd.PackageID,
 		PackageTitleSnapshot:       cmd.PackageTier,
 		PackageDescriptionSnapshot: cmd.PackageDescription,
