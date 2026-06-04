@@ -82,6 +82,26 @@ func (mr *MockPaymentCheckoutServiceClientMockRecorder) GetReleaseByOrderId(ctx,
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetReleaseByOrderId", reflect.TypeOf((*MockPaymentCheckoutServiceClient)(nil).GetReleaseByOrderId), varargs...)
 }
 
+// GetPaymentByOrderId mocks base method.
+func (m *MockPaymentCheckoutServiceClient) GetPaymentByOrderId(ctx context.Context, in *v1.GetPaymentByOrderIdRequest, opts ...grpc.CallOption) (*v1.GetPaymentByOrderIdResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "GetPaymentByOrderId", varargs...)
+	ret0, _ := ret[0].(*v1.GetPaymentByOrderIdResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPaymentByOrderId indicates an expected call of GetPaymentByOrderId.
+func (mr *MockPaymentCheckoutServiceClientMockRecorder) GetPaymentByOrderId(ctx, in any, opts ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPaymentByOrderId", reflect.TypeOf((*MockPaymentCheckoutServiceClient)(nil).GetPaymentByOrderId), varargs...)
+}
+
 // ReleaseFunds mocks base method.
 func (m *MockPaymentCheckoutServiceClient) ReleaseFunds(ctx context.Context, in *v1.ReleaseFundsRequest, opts ...grpc.CallOption) (*v1.ReleaseFundsResponse, error) {
 	m.ctrl.T.Helper()
@@ -154,6 +174,21 @@ func (m *MockPaymentCheckoutServiceServer) GetReleaseByOrderId(arg0 context.Cont
 func (mr *MockPaymentCheckoutServiceServerMockRecorder) GetReleaseByOrderId(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetReleaseByOrderId", reflect.TypeOf((*MockPaymentCheckoutServiceServer)(nil).GetReleaseByOrderId), arg0, arg1)
+}
+
+// GetPaymentByOrderId mocks base method.
+func (m *MockPaymentCheckoutServiceServer) GetPaymentByOrderId(arg0 context.Context, arg1 *v1.GetPaymentByOrderIdRequest) (*v1.GetPaymentByOrderIdResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPaymentByOrderId", arg0, arg1)
+	ret0, _ := ret[0].(*v1.GetPaymentByOrderIdResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPaymentByOrderId indicates an expected call of GetPaymentByOrderId.
+func (mr *MockPaymentCheckoutServiceServerMockRecorder) GetPaymentByOrderId(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPaymentByOrderId", reflect.TypeOf((*MockPaymentCheckoutServiceServer)(nil).GetPaymentByOrderId), arg0, arg1)
 }
 
 // ReleaseFunds mocks base method.

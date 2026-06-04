@@ -44,7 +44,7 @@ func NewStepRepository(db *gocql.Session, log logging.Logger) (domain.StepReposi
 
 func (r *sessionRepository) Create(ctx context.Context, session domain.Session) (*domain.Session, error) {
 	now := time.Now().UTC()
-	if err := r.db.Query(insertSessionQuery, session.SagaID, session.OrderID, session.BuyerID, session.SellerID, session.SellerUsername, session.BuyerEmail, session.RealtimeConnectionID, session.GigID, session.GigTitle, session.PackageID, session.PackageTier, session.PackageDescription, session.PackageDeliveryDays, session.PriceCents, session.Currency, session.Status, now, now).WithContext(ctx).Exec(); err != nil {
+	if err := r.db.Query(insertSessionQuery, session.SagaID, session.OrderID, session.BuyerID, session.SellerID, session.SellerUsername, session.BuyerEmail, session.RealtimeConnectionID, session.GigID, session.GigTitle, session.PictureFileID, session.PackageID, session.PackageTier, session.PackageDescription, session.PackageDeliveryDays, session.PriceCents, session.Currency, session.Status, now, now).WithContext(ctx).Exec(); err != nil {
 		r.log.Error("create order saga session failed", logging.Operation("db.order_saga.session.create"), logging.String("saga_id", session.SagaID), logging.Err(err))
 		return nil, err
 	}
@@ -55,24 +55,24 @@ func (r *sessionRepository) Create(ctx context.Context, session domain.Session) 
 
 func (r *sessionRepository) GetByID(ctx context.Context, sagaID string) (*domain.Session, error) {
 	var row SessionRow
-	if err := r.db.Query(getSessionByIDQuery, sagaID).WithContext(ctx).Consistency(gocql.One).Scan(&row.SagaID, &row.OrderID, &row.BuyerID, &row.SellerID, &row.SellerUsername, &row.BuyerEmail, &row.RealtimeConnectionID, &row.GigID, &row.GigTitle, &row.PackageID, &row.PackageTier, &row.PackageDescription, &row.PackageDeliveryDays, &row.PriceCents, &row.Currency, &row.Status, &row.CreatedAt, &row.UpdatedAt); err != nil {
+	if err := r.db.Query(getSessionByIDQuery, sagaID).WithContext(ctx).Consistency(gocql.One).Scan(&row.SagaID, &row.OrderID, &row.BuyerID, &row.SellerID, &row.SellerUsername, &row.BuyerEmail, &row.RealtimeConnectionID, &row.GigID, &row.GigTitle, &row.PictureFileID, &row.PackageID, &row.PackageTier, &row.PackageDescription, &row.PackageDeliveryDays, &row.PriceCents, &row.Currency, &row.Status, &row.CreatedAt, &row.UpdatedAt); err != nil {
 		if errors.Is(err, gocql.ErrNotFound) {
 			return nil, domain.ErrSessionNotFound
 		}
 		return nil, err
 	}
-	return &domain.Session{SagaID: row.SagaID, OrderID: row.OrderID, BuyerID: row.BuyerID, SellerID: row.SellerID, SellerUsername: row.SellerUsername, BuyerEmail: row.BuyerEmail, RealtimeConnectionID: row.RealtimeConnectionID, GigID: row.GigID, GigTitle: row.GigTitle, PackageID: row.PackageID, PackageTier: row.PackageTier, PackageDescription: row.PackageDescription, PackageDeliveryDays: row.PackageDeliveryDays, PriceCents: row.PriceCents, Currency: row.Currency, Status: row.Status, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}, nil
+	return &domain.Session{SagaID: row.SagaID, OrderID: row.OrderID, BuyerID: row.BuyerID, SellerID: row.SellerID, SellerUsername: row.SellerUsername, BuyerEmail: row.BuyerEmail, RealtimeConnectionID: row.RealtimeConnectionID, GigID: row.GigID, GigTitle: row.GigTitle, PictureFileID: row.PictureFileID, PackageID: row.PackageID, PackageTier: row.PackageTier, PackageDescription: row.PackageDescription, PackageDeliveryDays: row.PackageDeliveryDays, PriceCents: row.PriceCents, Currency: row.Currency, Status: row.Status, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}, nil
 }
 
 func (r *sessionRepository) GetByOrderID(ctx context.Context, orderID string) (*domain.Session, error) {
 	var row SessionRow
-	if err := r.db.Query(getSessionByOrderIDQuery, orderID).WithContext(ctx).Consistency(gocql.One).Scan(&row.SagaID, &row.OrderID, &row.BuyerID, &row.SellerID, &row.SellerUsername, &row.BuyerEmail, &row.RealtimeConnectionID, &row.GigID, &row.GigTitle, &row.PackageID, &row.PackageTier, &row.PackageDescription, &row.PackageDeliveryDays, &row.PriceCents, &row.Currency, &row.Status, &row.CreatedAt, &row.UpdatedAt); err != nil {
+	if err := r.db.Query(getSessionByOrderIDQuery, orderID).WithContext(ctx).Consistency(gocql.One).Scan(&row.SagaID, &row.OrderID, &row.BuyerID, &row.SellerID, &row.SellerUsername, &row.BuyerEmail, &row.RealtimeConnectionID, &row.GigID, &row.GigTitle, &row.PictureFileID, &row.PackageID, &row.PackageTier, &row.PackageDescription, &row.PackageDeliveryDays, &row.PriceCents, &row.Currency, &row.Status, &row.CreatedAt, &row.UpdatedAt); err != nil {
 		if errors.Is(err, gocql.ErrNotFound) {
 			return nil, domain.ErrSessionNotFound
 		}
 		return nil, err
 	}
-	return &domain.Session{SagaID: row.SagaID, OrderID: row.OrderID, BuyerID: row.BuyerID, SellerID: row.SellerID, SellerUsername: row.SellerUsername, BuyerEmail: row.BuyerEmail, RealtimeConnectionID: row.RealtimeConnectionID, GigID: row.GigID, GigTitle: row.GigTitle, PackageID: row.PackageID, PackageTier: row.PackageTier, PackageDescription: row.PackageDescription, PackageDeliveryDays: row.PackageDeliveryDays, PriceCents: row.PriceCents, Currency: row.Currency, Status: row.Status, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}, nil
+	return &domain.Session{SagaID: row.SagaID, OrderID: row.OrderID, BuyerID: row.BuyerID, SellerID: row.SellerID, SellerUsername: row.SellerUsername, BuyerEmail: row.BuyerEmail, RealtimeConnectionID: row.RealtimeConnectionID, GigID: row.GigID, GigTitle: row.GigTitle, PictureFileID: row.PictureFileID, PackageID: row.PackageID, PackageTier: row.PackageTier, PackageDescription: row.PackageDescription, PackageDeliveryDays: row.PackageDeliveryDays, PriceCents: row.PriceCents, Currency: row.Currency, Status: row.Status, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt}, nil
 }
 
 func (r *sessionRepository) UpdateStatus(ctx context.Context, sagaID, status string) error {

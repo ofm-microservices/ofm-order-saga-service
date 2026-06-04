@@ -122,6 +122,26 @@ func (mr *MockOrderWriteServiceClientMockRecorder) GetOrderPaymentSnapshot(ctx, 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOrderPaymentSnapshot", reflect.TypeOf((*MockOrderWriteServiceClient)(nil).GetOrderPaymentSnapshot), varargs...)
 }
 
+// GetOrderPreviewByID mocks base method.
+func (m *MockOrderWriteServiceClient) GetOrderPreviewByID(ctx context.Context, in *v1.GetOrderPreviewByIDRequest, opts ...grpc.CallOption) (*v1.GetOrderPreviewByIDResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "GetOrderPreviewByID", varargs...)
+	ret0, _ := ret[0].(*v1.GetOrderPreviewByIDResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetOrderPreviewByID indicates an expected call of GetOrderPreviewByID.
+func (mr *MockOrderWriteServiceClientMockRecorder) GetOrderPreviewByID(ctx, in any, opts ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOrderPreviewByID", reflect.TypeOf((*MockOrderWriteServiceClient)(nil).GetOrderPreviewByID), varargs...)
+}
+
 // MarkOrderCompleted mocks base method.
 func (m *MockOrderWriteServiceClient) MarkOrderCompleted(ctx context.Context, in *v1.MarkOrderCompletedRequest, opts ...grpc.CallOption) (*v1.MarkOrderCompletedResponse, error) {
 	m.ctrl.T.Helper()

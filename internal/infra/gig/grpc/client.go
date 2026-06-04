@@ -62,6 +62,7 @@ func (c *client) GetOrderStartSnapshot(ctx context.Context, gigID, packageID str
 		SellerID:           snapshot.GetSellerUserId(),
 		SellerUsername:     snapshot.GetSellerUsername(),
 		GigTitle:           snapshot.GetGigTitle(),
+		PictureFileID:      snapshot.GetPictureFileId(),
 		PackageTitle:       snapshot.GetPackageTitle(),
 		PackageDescription: snapshot.GetPackageDescription(),
 		PriceCents:         snapshot.GetPriceCents(),
