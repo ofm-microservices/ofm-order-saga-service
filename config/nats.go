@@ -17,6 +17,7 @@ type NATSConfig struct {
 	OrderCreateSubject       string `env:"SUBJECT_ORDER_CREATE" envDefault:"order.create"`
 	OrderCreateResultSubject string `env:"SUBJECT_ORDER_CREATE_RESULT" envDefault:"order.create.result"`
 	OrderConfirmSubject      string `env:"SUBJECT_ORDER_CONFIRM" envDefault:"order.confirm"`
+	OrderFundedSubject       string `env:"SUBJECT_ORDER_FUNDED" envDefault:"order.funded"`
 	OrderFailSubject         string `env:"SUBJECT_ORDER_FAIL" envDefault:"order.fail"`
 	OrderSagaStartSubject    string `env:"SUBJECT_ORDER_SAGA_START" envDefault:"order.saga.start"`
 

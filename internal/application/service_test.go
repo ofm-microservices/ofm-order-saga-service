@@ -99,6 +99,7 @@ func (r *testOrders) GetOrderLifecycleSnapshot(_ context.Context, _ string) (*Or
 		SagaID:             "saga-1",
 		BuyerID:            "user-1",
 		SellerID:           "seller-1",
+		GigID:              "gig-1",
 		GigTitle:           "Logo design",
 		PackageTitle:       "Pro",
 		PackageDescription: "Fast delivery",
@@ -220,6 +221,7 @@ func TestHandlePaymentStatusPublishesReceiptEmailAndRealtimeDelivery(t *testing.
 		config.NATSConfig{
 			MailSendSubject:               "mail.send",
 			RealtimeOrderConfirmedSubject: "realtime.order.confirmed",
+			OrderFundedSubject:            "order.funded",
 		},
 		logger,
 	)
@@ -249,6 +251,9 @@ func TestHandlePaymentStatusPublishesReceiptEmailAndRealtimeDelivery(t *testing.
 	}
 	if broker.published[2].subject != "mail.send" {
 		t.Fatalf("third subject = %q, want %q", broker.published[2].subject, "mail.send")
+	}
+	if broker.published[1].subject != "order.funded" {
+		t.Fatalf("second subject = %q, want %q", broker.published[1].subject, "order.funded")
 	}
 
 	var realtimeMsg realtimeDeliveryMessage
