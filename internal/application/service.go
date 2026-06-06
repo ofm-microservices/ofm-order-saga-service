@@ -616,13 +616,17 @@ func (s *service) HandlePaymentStatus(ctx context.Context, evt PaymentStatusEven
 		return s.publishOrderFailedEvent(ctx, evt.SagaID, evt.OrderID, evt.Error)
 	}
 	_ = s.sessions.UpdateStatus(ctx, evt.SagaID, domain.SessionStatusFunded)
+	snap, err := s.orders.GetOrderLifecycleSnapshot(ctx, evt.OrderID)
+	if err != nil {
+		return err
+	}
 	if _, err := s.orders.MarkOrderFunded(ctx, MarkOrderFundedCommand{OrderID: evt.OrderID, PaymentIntentID: evt.PaymentIntentID, RequestedAt: evt.OccurredAt}); err != nil {
 		return err
 	}
 	if err := s.publishOrderConfirmedNotification(ctx, evt.SagaID, evt.PaymentIntentID); err != nil {
 		return err
 	}
-	if err := s.publishOrderFundedEvent(ctx, evt.SagaID, evt.OrderID, evt.PaymentIntentID, evt.OccurredAt); err != nil {
+	if err := s.publishOrderFundedEvent(ctx, evt.SagaID, evt.OrderID, snap.GigID, evt.OccurredAt); err != nil {
 		return err
 	}
 	return s.sendReceiptEmail(ctx, evt.SagaID)
@@ -1106,18 +1110,23 @@ func realtimeSubjectForStartup(startupID string) string {
 	return "realtime.instance." + startupID
 }
 
-func (s *service) publishOrderFundedEvent(ctx context.Context, sagaID, orderID, paymentIntentID, occurredAt string) error {
-	payload, err := protojson.Marshal(&orderflowv1.OrderConfirmedEvent{
-		SagaId:          sagaID,
-		OrderId:         orderID,
-		PaymentIntentId: paymentIntentID,
-		CheckoutUrl:     "",
-		OccurredAt:      occurredAt,
+func (s *service) publishOrderFundedEvent(ctx context.Context, sagaID, orderID, gigID, occurredAt string) error {
+	payload, err := protojson.Marshal(&orderflowv1.OrderSagaResult{
+		SagaId:     sagaID,
+		OrderId:    orderID,
+		GigId:      gigID,
+		Status:     "success",
+		Operation:  "payment_funded",
+		OccurredAt: occurredAt,
 	})
 	if err != nil {
 		return ErrPublishCommand
 	}
-	return s.broker.Publish(ctx, s.cfg.OrderConfirmSubject, payload)
+	subject := s.cfg.OrderFundedSubject
+	if subject == "" {
+		subject = "order.funded"
+	}
+	return s.broker.Publish(ctx, subject, payload)
 }
 
 func (s *service) publishOrderFailedEvent(ctx context.Context, sagaID, orderID, reason string) error {
