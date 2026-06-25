@@ -93,23 +93,22 @@ func (s *service) Start(ctx context.Context, cmd OrderSagaCommand) error {
 		return err
 	}
 	session := domain.Session{
-		SagaID:               cmd.SagaID,
-		OrderID:              cmd.OrderID,
-		BuyerID:              cmd.BuyerID,
-		SellerID:             snapshot.SellerID,
-		SellerUsername:       snapshot.SellerUsername,
-		BuyerEmail:           buyerEmail,
-		RealtimeConnectionID: cmd.RealtimeConnectionID,
-		GigID:                snapshot.GigID,
-		GigTitle:             snapshot.GigTitle,
-		PictureFileID:        snapshot.PictureFileID,
-		PackageID:            snapshot.PackageID,
-		PackageTier:          snapshot.PackageTitle,
-		PackageDescription:   snapshot.PackageDescription,
-		PackageDeliveryDays:  snapshot.DeliveryDays,
-		PriceCents:           snapshot.PriceCents,
-		Currency:             snapshot.Currency,
-		Status:               domain.SessionStatusRequirementsPending,
+		SagaID:              cmd.SagaID,
+		OrderID:             cmd.OrderID,
+		BuyerID:             cmd.BuyerID,
+		SellerID:            snapshot.SellerID,
+		SellerUsername:      snapshot.SellerUsername,
+		BuyerEmail:          buyerEmail,
+		GigID:               snapshot.GigID,
+		GigTitle:            snapshot.GigTitle,
+		PictureFileID:       snapshot.PictureFileID,
+		PackageID:           snapshot.PackageID,
+		PackageTier:         snapshot.PackageTitle,
+		PackageDescription:  snapshot.PackageDescription,
+		PackageDeliveryDays: snapshot.DeliveryDays,
+		PriceCents:          snapshot.PriceCents,
+		Currency:            snapshot.Currency,
+		Status:              domain.SessionStatusRequirementsPending,
 	}
 	if _, err := s.sessions.Create(ctx, session); err != nil {
 		return err
@@ -181,27 +180,30 @@ func (s *service) StartOrder(ctx context.Context, cmd StartOrderCommand) (*Start
 	if strings.TrimSpace(snapshot.SellerID) == strings.TrimSpace(cmd.BuyerID) {
 		return nil, ErrSelfOrderNotAllowed
 	}
-	buyerEmail, err := s.auth.GetEmailByUserID(ctx, cmd.BuyerID)
-	if err != nil {
-		return nil, err
+	buyerEmail := strings.TrimSpace(cmd.BuyerEmail)
+	if buyerEmail == "" {
+		var err error
+		buyerEmail, err = s.auth.GetEmailByUserID(ctx, cmd.BuyerID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	session := domain.Session{
-		SagaID:               cmd.SagaID,
-		OrderID:              cmd.OrderID,
-		BuyerID:              cmd.BuyerID,
-		SellerID:             snapshot.SellerID,
-		SellerUsername:       snapshot.SellerUsername,
-		BuyerEmail:           buyerEmail,
-		RealtimeConnectionID: cmd.RealtimeConnectionID,
-		GigID:                snapshot.GigID,
-		GigTitle:             snapshot.GigTitle,
-		PackageID:            snapshot.PackageID,
-		PackageTier:          snapshot.PackageTitle,
-		PackageDescription:   snapshot.PackageDescription,
-		PackageDeliveryDays:  snapshot.DeliveryDays,
-		PriceCents:           snapshot.PriceCents,
-		Currency:             snapshot.Currency,
-		Status:               domain.SessionStatusStarted,
+		SagaID:              cmd.SagaID,
+		OrderID:             cmd.OrderID,
+		BuyerID:             cmd.BuyerID,
+		SellerID:            snapshot.SellerID,
+		SellerUsername:      snapshot.SellerUsername,
+		BuyerEmail:          buyerEmail,
+		GigID:               snapshot.GigID,
+		GigTitle:            snapshot.GigTitle,
+		PackageID:           snapshot.PackageID,
+		PackageTier:         snapshot.PackageTitle,
+		PackageDescription:  snapshot.PackageDescription,
+		PackageDeliveryDays: snapshot.DeliveryDays,
+		PriceCents:          snapshot.PriceCents,
+		Currency:            snapshot.Currency,
+		Status:              domain.SessionStatusStarted,
 	}
 	if _, err := s.sessions.Create(ctx, session); err != nil {
 		return nil, err
@@ -358,10 +360,19 @@ func (s *service) DeliverOrder(ctx context.Context, cmd DeliverOrderCommand) (*D
 	}
 	_ = s.sessions.UpdateStatus(ctx, snap.SagaID, domain.SessionStatusDelivered)
 	if err := s.publishOrderLifecycle(ctx, snap.SagaID, domain.StepKeyDeliverOrder, domain.SessionStatusDelivered, "order_delivered", "Your delivery has been submitted.", "success", snap, cmd.SellerID, false); err != nil {
-		return nil, err
+		s.log.Warn("failed to publish order delivery lifecycle notification",
+			logging.Operation("order.delivery.notification"),
+			logging.String("order_id", snap.OrderID),
+			logging.Err(err),
+		)
 	}
 	if err := s.publishLifecycleMail(ctx, snap, domain.SessionStatusDelivered, cmd.SellerID, "order_delivery_submitted_seller", "order_delivered", "Your delivery has been submitted."); err != nil {
-		return nil, err
+		s.log.Warn("failed to publish order delivery mail",
+			logging.Operation("order.delivery.mail"),
+			logging.String("order_id", snap.OrderID),
+			logging.String("user_id", cmd.SellerID),
+			logging.Err(err),
+		)
 	}
 	return &DeliverOrderResult{OrderID: snap.OrderID, Status: domain.SessionStatusDelivered, CurrentStep: "buyer_review_pending"}, nil
 }
@@ -511,31 +522,140 @@ func (s *service) OpenDispute(ctx context.Context, cmd OpenDisputeCommand) (*Ope
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(snap.BuyerID) != strings.TrimSpace(cmd.BuyerID) {
+	actorID := strings.TrimSpace(cmd.ActorID)
+	if actorID != strings.TrimSpace(snap.BuyerID) && actorID != strings.TrimSpace(snap.SellerID) {
 		return nil, ErrOrderNotOwned
 	}
-	if snap.Status != domain.SessionStatusDelivered && snap.Status != domain.SessionStatusRevisionRequested {
+	disputeType := ""
+	switch {
+	case actorID == strings.TrimSpace(snap.BuyerID) && snap.Status == domain.SessionStatusFunded:
+		disputeType = "buyer_cancel_before_delivery"
+	case actorID == strings.TrimSpace(snap.SellerID) && snap.Status == domain.SessionStatusFunded:
+		disputeType = "seller_cancel_before_delivery"
+	case actorID == strings.TrimSpace(snap.BuyerID) && (snap.Status == domain.SessionStatusDelivered || snap.Status == domain.SessionStatusRevisionRequested):
+		disputeType = "buyer_dispute_after_delivery"
+	default:
 		return nil, ErrOrderNotDisputable
 	}
 	if _, err := s.orders.OpenDispute(ctx, OpenDisputeCommand{
 		OrderID:     cmd.OrderID,
-		BuyerID:     cmd.BuyerID,
+		ActorID:     actorID,
+		DisputeType: disputeType,
 		Reason:      cmd.Reason,
 		RequestedAt: cmd.RequestedAt,
 	}); err != nil {
 		return nil, err
 	}
 	_ = s.sessions.UpdateStatus(ctx, snap.SagaID, domain.SessionStatusDisputed)
-	if err := s.publishOrderLifecycle(ctx, snap.SagaID, domain.StepKeyOpenDispute, domain.SessionStatusDisputed, "order_disputed", "The order is under review.", "warning", snap, snap.SellerID, false); err != nil {
-		return nil, err
+	if err := s.publishOrderLifecycleToParticipants(ctx, snap.SagaID, domain.StepKeyOpenDispute, domain.SessionStatusDisputed, "order_disputed", "The order is under review.", "warning", snap, snap.BuyerID, snap.SellerID); err != nil {
+		s.log.Warn("failed to publish order dispute lifecycle notification",
+			logging.Operation("order.dispute.notification"),
+			logging.String("order_id", snap.OrderID),
+			logging.Err(err),
+		)
 	}
 	if err := s.publishLifecycleMail(ctx, snap, domain.SessionStatusDisputed, snap.BuyerID, "order_disputed_buyer", "order_disputed", "Your dispute was received."); err != nil {
-		return nil, err
+		s.log.Warn("failed to publish buyer dispute mail",
+			logging.Operation("order.dispute.mail"),
+			logging.String("order_id", snap.OrderID),
+			logging.String("user_id", snap.BuyerID),
+			logging.Err(err),
+		)
 	}
 	if err := s.publishLifecycleMail(ctx, snap, domain.SessionStatusDisputed, snap.SellerID, "order_disputed_seller", "order_disputed", "The buyer opened a dispute."); err != nil {
-		return nil, err
+		s.log.Warn("failed to publish seller dispute mail",
+			logging.Operation("order.dispute.mail"),
+			logging.String("order_id", snap.OrderID),
+			logging.String("user_id", snap.SellerID),
+			logging.Err(err),
+		)
 	}
 	return &OpenDisputeResult{OrderID: snap.OrderID, Status: domain.SessionStatusDisputed, CurrentStep: "resolution_pending"}, nil
+}
+
+func (s *service) ResolveDispute(ctx context.Context, cmd SettleDisputeCommand) (*SettleDisputeResult, error) {
+	if cmd.RequestedAt == "" {
+		cmd.RequestedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	if cmd.FreelancerPercentage < 0 || cmd.CustomerPercentage < 0 || cmd.FreelancerPercentage+cmd.CustomerPercentage != 100 {
+		return nil, ErrInvalidDisputeSplit
+	}
+	snap, err := s.orders.GetOrderLifecycleSnapshot(ctx, cmd.OrderID)
+	if err != nil {
+		return nil, err
+	}
+	switch snap.Status {
+	case domain.SessionStatusDisputed, domain.SessionStatusRevisionRequested, domain.SessionStatusDelivered:
+	default:
+		return nil, ErrOrderNotDisputable
+	}
+	releaseState, err := s.payments.GetReleaseByOrderID(ctx, snap.OrderID)
+	if err == nil && releaseState != nil && releaseState.Status == "released" {
+		if _, err := s.orders.MarkDisputeResolved(ctx, MarkDisputeResolvedCommand{OrderID: snap.OrderID, PaymentReleaseID: releaseState.PaymentReleaseID, RequestedAt: cmd.RequestedAt}); err != nil {
+			return nil, err
+		}
+		_ = s.sessions.UpdateStatus(ctx, snap.SagaID, domain.SessionStatusDisputeResolved)
+		return &SettleDisputeResult{
+			OrderID:          snap.OrderID,
+			PaymentReleaseID: releaseState.PaymentReleaseID,
+			StripeTransferID: releaseState.StripeTransferID,
+			Status:           domain.SessionStatusDisputeResolved,
+			CurrentStep:      "resolution_completed",
+			OccurredAt:       releaseState.OccurredAt,
+		}, nil
+	}
+	settlement, err := s.payments.SettleDispute(ctx, SettleDisputeCommand{
+		OrderID:              snap.OrderID,
+		AdminUserID:          cmd.AdminUserID,
+		PaymentID:            snap.PaymentIntentID,
+		SellerUserID:         snap.SellerID,
+		AmountCents:          snap.PriceCents,
+		Currency:             snap.Currency,
+		FreelancerPercentage: cmd.FreelancerPercentage,
+		CustomerPercentage:   cmd.CustomerPercentage,
+		IdempotencyKey:       cmd.IdempotencyKey,
+		Reason:               cmd.Reason,
+		RequestedAt:          cmd.RequestedAt,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.orders.MarkDisputeResolved(ctx, MarkDisputeResolvedCommand{OrderID: snap.OrderID, PaymentReleaseID: settlement.PaymentReleaseID, RequestedAt: cmd.RequestedAt}); err != nil {
+		return nil, err
+	}
+	_ = s.sessions.UpdateStatus(ctx, snap.SagaID, domain.SessionStatusDisputeResolved)
+	if err := s.publishOrderLifecycleToParticipants(ctx, snap.SagaID, domain.StepKeyResolveDispute, domain.SessionStatusDisputeResolved, "order_dispute_resolved", "The dispute was resolved.", "success", snap, snap.BuyerID, snap.SellerID); err != nil {
+		s.log.Warn("failed to publish dispute resolution lifecycle notification",
+			logging.Operation("order.dispute_resolution.notification"),
+			logging.String("order_id", snap.OrderID),
+			logging.Err(err),
+		)
+	}
+	if err := s.publishLifecycleMail(ctx, snap, domain.SessionStatusDisputeResolved, snap.BuyerID, "order_dispute_resolved_buyer", "order_dispute_resolved", "The dispute was resolved."); err != nil {
+		s.log.Warn("failed to publish buyer dispute resolution mail",
+			logging.Operation("order.dispute_resolution.mail"),
+			logging.String("order_id", snap.OrderID),
+			logging.String("user_id", snap.BuyerID),
+			logging.Err(err),
+		)
+	}
+	if err := s.publishLifecycleMail(ctx, snap, domain.SessionStatusDisputeResolved, snap.SellerID, "order_dispute_resolved_seller", "order_dispute_resolved", "The dispute was resolved."); err != nil {
+		s.log.Warn("failed to publish seller dispute resolution mail",
+			logging.Operation("order.dispute_resolution.mail"),
+			logging.String("order_id", snap.OrderID),
+			logging.String("user_id", snap.SellerID),
+			logging.Err(err),
+		)
+	}
+	return &SettleDisputeResult{
+		OrderID:          snap.OrderID,
+		PaymentReleaseID: settlement.PaymentReleaseID,
+		StripeTransferID: settlement.StripeTransferID,
+		StripeRefundID:   settlement.StripeRefundID,
+		Status:           domain.SessionStatusDisputeResolved,
+		CurrentStep:      "resolution_completed",
+		OccurredAt:       settlement.OccurredAt,
+	}, nil
 }
 
 func (s *service) HandleOrderCreateResult(ctx context.Context, res OrderSagaResult) error {
@@ -745,6 +865,62 @@ func (s *service) publishOrderLifecycle(ctx context.Context, sagaID, stepKey, or
 	return nil
 }
 
+func (s *service) publishOrderLifecycleToParticipants(ctx context.Context, sagaID, stepKey, orderStatus, kind, message, severity string, snap *OrderLifecycleSnapshot, userIDs ...string) error {
+	step, err := s.ensureNotificationStep(ctx, sagaID, stepKey)
+	if err != nil {
+		return err
+	}
+	if step.Status == domain.StepStatusCompleted {
+		return nil
+	}
+	if snap == nil {
+		return ErrInvalidOrderSnapshot
+	}
+	priceDisplay := fmt.Sprintf("%s %d.%02d", snap.Currency, snap.PriceCents/100, snap.PriceCents%100)
+	seen := make(map[string]struct{}, len(userIDs))
+	for _, userID := range userIDs {
+		userID = strings.TrimSpace(userID)
+		if userID == "" {
+			continue
+		}
+		if _, ok := seen[userID]; ok {
+			continue
+		}
+		seen[userID] = struct{}{}
+		payload, err := s.mapr.marshal(OrderLifecycleNotification{
+			RealtimeNotificationMetadata: RealtimeNotificationMetadata{
+				SagaID:        snap.SagaID,
+				OrderID:       snap.OrderID,
+				UserID:        userID,
+				CorrelationID: snap.SagaID,
+				DedupeKey:     sagaID + ":" + stepKey + ":" + userID,
+			},
+			Kind:               kind,
+			Title:              titleForLifecycleKind(kind),
+			Message:            message,
+			Severity:           severity,
+			OrderStatus:        orderStatus,
+			GigTitle:           snap.GigTitle,
+			PackageTier:        snap.PackageTitle,
+			PackageDescription: snap.PackageDescription,
+			PriceDisplay:       priceDisplay,
+		})
+		if err != nil {
+			return ErrPublishCommand
+		}
+		if err := s.publishUserRealtimeDelivery(ctx, userID, payload); err != nil {
+			return err
+		}
+	}
+	if err := s.publishLifecycleEvent(ctx, sagaID, snap.OrderID, stepKey, orderStatus, ""); err != nil {
+		return err
+	}
+	if err := s.steps.UpdateStatus(ctx, sagaID, stepKey, domain.StepStatusCompleted); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *service) publishReviewPrompt(ctx context.Context, snap *OrderLifecycleSnapshot) error {
 	step, err := s.ensureNotificationStep(ctx, snap.SagaID, domain.StepKeyRealtimeReviewPrompt)
 	if err != nil {
@@ -784,6 +960,8 @@ func titleForLifecycleKind(kind string) string {
 		return "Revision requested"
 	case "order_disputed":
 		return "Dispute opened"
+	case "order_dispute_resolved":
+		return "Dispute resolved"
 	case "order_completed":
 		return "Order completed"
 	case "order_release_failed":
@@ -860,7 +1038,7 @@ func (s *service) publishUserRealtimeDelivery(ctx context.Context, userID string
 	if err != nil {
 		return ErrPublishCommand
 	}
-	return s.broker.Publish(ctx, s.cfg.RealtimeUserDeliverySubject, delivery)
+	return s.broker.Publish(ctx, realtimeSubject, delivery)
 }
 
 func (s *service) publishLifecycleEvent(ctx context.Context, sagaID, orderID, stepKey, status, reason string) error {
@@ -872,6 +1050,8 @@ func (s *service) publishLifecycleEvent(ctx context.Context, sagaID, orderID, st
 		subject = s.cfg.OrderRevisionRequestedSubject
 	case domain.StepKeyOpenDispute:
 		subject = s.cfg.OrderDisputedSubject
+	case domain.StepKeyResolveDispute:
+		subject = s.cfg.OrderDisputeResolvedSubject
 	case domain.StepKeyAcceptDelivery:
 		subject = s.cfg.OrderCompletedSubject
 	case domain.StepKeyReleaseFunds:
@@ -926,7 +1106,6 @@ func (s *service) publishOrderAcceptedNotification(ctx context.Context, sagaID s
 			SagaID:        session.SagaID,
 			OrderID:       session.OrderID,
 			UserID:        session.BuyerID,
-			ClientID:      session.RealtimeConnectionID,
 			CorrelationID: session.SagaID,
 			DedupeKey:     sagaID + ":realtime.order.accepted",
 		},
@@ -945,7 +1124,7 @@ func (s *service) publishOrderAcceptedNotification(ctx context.Context, sagaID s
 	if err != nil {
 		return ErrPublishCommand
 	}
-	if err := s.publishRealtimeDelivery(ctx, session.RealtimeConnectionID, payload, session.BuyerID); err != nil {
+	if err := s.publishRealtimeDelivery(ctx, payload, session.BuyerID); err != nil {
 		return err
 	}
 	return s.steps.UpdateStatus(ctx, sagaID, domain.StepKeyRealtimeOrderAccepted, domain.StepStatusCompleted)
@@ -969,7 +1148,6 @@ func (s *service) publishPaymentReadyNotification(ctx context.Context, sagaID, c
 			SagaID:        session.SagaID,
 			OrderID:       session.OrderID,
 			UserID:        session.BuyerID,
-			ClientID:      session.RealtimeConnectionID,
 			CorrelationID: session.SagaID,
 			DedupeKey:     sagaID + ":realtime.payment.ready",
 		},
@@ -989,7 +1167,7 @@ func (s *service) publishPaymentReadyNotification(ctx context.Context, sagaID, c
 	if err != nil {
 		return ErrPublishCommand
 	}
-	if err := s.publishRealtimeDelivery(ctx, session.RealtimeConnectionID, payload, session.BuyerID); err != nil {
+	if err := s.publishRealtimeDelivery(ctx, payload, session.BuyerID); err != nil {
 		return err
 	}
 	return s.steps.UpdateStatus(ctx, sagaID, domain.StepKeyRealtimePaymentReady, domain.StepStatusCompleted)
@@ -1013,7 +1191,6 @@ func (s *service) publishOrderConfirmedNotification(ctx context.Context, sagaID,
 			SagaID:        session.SagaID,
 			OrderID:       session.OrderID,
 			UserID:        session.BuyerID,
-			ClientID:      session.RealtimeConnectionID,
 			CorrelationID: session.SagaID,
 			DedupeKey:     sagaID + ":realtime.order.confirmed",
 		},
@@ -1032,7 +1209,7 @@ func (s *service) publishOrderConfirmedNotification(ctx context.Context, sagaID,
 	if err != nil {
 		return ErrPublishCommand
 	}
-	if err := s.publishRealtimeDelivery(ctx, session.RealtimeConnectionID, payload, session.BuyerID); err != nil {
+	if err := s.publishRealtimeDelivery(ctx, payload, session.BuyerID); err != nil {
 		return err
 	}
 	return s.steps.UpdateStatus(ctx, sagaID, domain.StepKeyRealtimeOrderConfirmed, domain.StepStatusCompleted)
@@ -1056,7 +1233,6 @@ func (s *service) publishOrderFailedNotification(ctx context.Context, sagaID, fa
 			SagaID:        session.SagaID,
 			OrderID:       session.OrderID,
 			UserID:        session.BuyerID,
-			ClientID:      session.RealtimeConnectionID,
 			CorrelationID: session.SagaID,
 			DedupeKey:     sagaID + ":realtime.order.failed",
 		},
@@ -1075,40 +1251,26 @@ func (s *service) publishOrderFailedNotification(ctx context.Context, sagaID, fa
 	if err != nil {
 		return ErrPublishCommand
 	}
-	if err := s.publishRealtimeDelivery(ctx, session.RealtimeConnectionID, payload, session.BuyerID); err != nil {
+	if err := s.publishRealtimeDelivery(ctx, payload, session.BuyerID); err != nil {
 		return err
 	}
 	return s.steps.UpdateStatus(ctx, sagaID, domain.StepKeyRealtimeOrderFailed, domain.StepStatusCompleted)
 }
 
-func (s *service) publishRealtimeDelivery(ctx context.Context, connectionID string, payload []byte, userID string) error {
-	startupID, err := realtimeStartupID(connectionID)
-	if err != nil {
-		return err
-	}
+func (s *service) publishRealtimeDelivery(ctx context.Context, payload []byte, userID string) error {
 	delivery, err := s.mapr.marshal(realtimeDeliveryMessage{
-		ConnectionID: connectionID,
-		UserID:       userID,
-		Type:         "order.realtime",
-		Payload:      payload,
+		DeliveryScope: "user",
+		UserID:        userID,
+		Type:          "order.realtime",
+		Payload:       payload,
 	})
 	if err != nil {
 		return ErrPublishCommand
 	}
-	return s.broker.Publish(ctx, realtimeSubjectForStartup(startupID), delivery)
+	return s.broker.Publish(ctx, realtimeSubject, delivery)
 }
 
-func realtimeStartupID(connectionID string) (string, error) {
-	startupID, _, ok := strings.Cut(strings.TrimSpace(connectionID), ".")
-	if !ok || strings.TrimSpace(startupID) == "" {
-		return "", ErrPublishCommand
-	}
-	return startupID, nil
-}
-
-func realtimeSubjectForStartup(startupID string) string {
-	return "realtime.instance." + startupID
-}
+const realtimeSubject = "realtime"
 
 func (s *service) publishOrderFundedEvent(ctx context.Context, sagaID, orderID, gigID, occurredAt string) error {
 	payload, err := protojson.Marshal(&orderflowv1.OrderSagaResult{

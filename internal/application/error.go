@@ -47,6 +47,8 @@ var (
 	ErrOrderNotRevisionable = errors.New("order not revisionable")
 	// ErrOrderNotDisputable reports that the order cannot be disputed yet.
 	ErrOrderNotDisputable = errors.New("order not disputable")
+	// ErrInvalidDisputeSplit reports that the settlement percentages are invalid.
+	ErrInvalidDisputeSplit = errors.New("invalid dispute split")
 	// ErrOrderReleaseFailed reports that the payout release failed.
 	ErrOrderReleaseFailed = errors.New("order release failed")
 )

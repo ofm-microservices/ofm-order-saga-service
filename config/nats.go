@@ -32,10 +32,10 @@ type NATSConfig struct {
 	RealtimePaymentReadySubject   string `env:"SUBJECT_REALTIME_PAYMENT_READY" envDefault:"realtime.payment.ready"`
 	RealtimeOrderConfirmedSubject string `env:"SUBJECT_REALTIME_ORDER_CONFIRMED" envDefault:"realtime.order.confirmed"`
 	RealtimeOrderFailedSubject    string `env:"SUBJECT_REALTIME_ORDER_FAILED" envDefault:"realtime.order.failed"`
-	RealtimeUserDeliverySubject   string `env:"SUBJECT_REALTIME_USER_DELIVERY" envDefault:"realtime.user.delivery"`
 	OrderDeliveredSubject         string `env:"SUBJECT_ORDER_DELIVERED" envDefault:"order.delivered"`
 	OrderRevisionRequestedSubject string `env:"SUBJECT_ORDER_REVISION_REQUESTED" envDefault:"order.revision_requested"`
 	OrderDisputedSubject          string `env:"SUBJECT_ORDER_DISPUTED" envDefault:"order.disputed"`
+	OrderDisputeResolvedSubject   string `env:"SUBJECT_ORDER_DISPUTE_RESOLVED" envDefault:"order.dispute_resolved"`
 	OrderCompletedSubject         string `env:"SUBJECT_ORDER_COMPLETED" envDefault:"order.completed"`
 	OrderReleaseFailedSubject     string `env:"SUBJECT_ORDER_RELEASE_FAILED" envDefault:"order.release_failed"`
 	OrderReleaseRequestSubject    string `env:"SUBJECT_ORDER_RELEASE_REQUEST" envDefault:"order.release.request"`

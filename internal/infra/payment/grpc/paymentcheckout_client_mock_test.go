@@ -102,6 +102,26 @@ func (mr *MockPaymentCheckoutServiceClientMockRecorder) GetPaymentByOrderId(ctx,
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPaymentByOrderId", reflect.TypeOf((*MockPaymentCheckoutServiceClient)(nil).GetPaymentByOrderId), varargs...)
 }
 
+// SettleDispute mocks base method.
+func (m *MockPaymentCheckoutServiceClient) SettleDispute(ctx context.Context, in *v1.SettleDisputeRequest, opts ...grpc.CallOption) (*v1.SettleDisputeResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "SettleDispute", varargs...)
+	ret0, _ := ret[0].(*v1.SettleDisputeResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SettleDispute indicates an expected call of SettleDispute.
+func (mr *MockPaymentCheckoutServiceClientMockRecorder) SettleDispute(ctx, in any, opts ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SettleDispute", reflect.TypeOf((*MockPaymentCheckoutServiceClient)(nil).SettleDispute), varargs...)
+}
+
 // ReleaseFunds mocks base method.
 func (m *MockPaymentCheckoutServiceClient) ReleaseFunds(ctx context.Context, in *v1.ReleaseFundsRequest, opts ...grpc.CallOption) (*v1.ReleaseFundsResponse, error) {
 	m.ctrl.T.Helper()

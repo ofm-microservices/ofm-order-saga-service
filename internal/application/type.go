@@ -24,6 +24,7 @@ type Service interface {
 	AcceptDelivery(ctx context.Context, cmd AcceptDeliveryCommand) (*AcceptDeliveryResult, error)
 	RequestRevision(ctx context.Context, cmd RequestRevisionCommand) (*RequestRevisionResult, error)
 	OpenDispute(ctx context.Context, cmd OpenDisputeCommand) (*OpenDisputeResult, error)
+	ResolveDispute(ctx context.Context, cmd SettleDisputeCommand) (*SettleDisputeResult, error)
 }
 
 // GigSnapshotClient resolves the authoritative gig/package snapshot used to
@@ -54,6 +55,7 @@ type OrderWriteClient interface {
 	RequestRevision(ctx context.Context, cmd RequestRevisionCommand) (*RequestRevisionResult, error)
 	OpenDispute(ctx context.Context, cmd OpenDisputeCommand) (*OpenDisputeResult, error)
 	MarkOrderCompleted(ctx context.Context, cmd MarkOrderCompletedCommand) (*MarkOrderCompletedResult, error)
+	MarkDisputeResolved(ctx context.Context, cmd MarkDisputeResolvedCommand) (*MarkDisputeResolvedResult, error)
 	MarkReleaseFailed(ctx context.Context, cmd MarkReleaseFailedCommand) (*MarkReleaseFailedResult, error)
 	Close() error
 }
@@ -63,6 +65,7 @@ type PaymentCheckoutClient interface {
 	GetConnectStatus(ctx context.Context, userID string) (*GetConnectStatusResult, error)
 	CreateCheckoutSession(ctx context.Context, cmd CreateCheckoutSessionCommand) (*CreateCheckoutSessionResult, error)
 	ReleaseFunds(ctx context.Context, cmd ReleaseFundsCommand) (*ReleaseFundsResult, error)
+	SettleDispute(ctx context.Context, cmd SettleDisputeCommand) (*SettleDisputeResult, error)
 	GetReleaseByOrderID(ctx context.Context, orderID string) (*GetReleaseByOrderResult, error)
 	Close() error
 }
@@ -92,30 +95,29 @@ type Logger = logging.Logger
 
 // OrderSagaCommand is the root command accepted by the order saga.
 type OrderSagaCommand struct {
-	SagaID               string `json:"saga_id"`
-	OrderID              string `json:"order_id"`
-	BuyerID              string `json:"buyer_id"`
-	BuyerEmail           string `json:"buyer_email"`
-	RealtimeConnectionID string `json:"realtime_connection_id,omitempty"`
-	GigID                string `json:"gig_id"`
-	PackageID            string `json:"package_id"`
-	SellerUsername       string `json:"seller_username,omitempty"`
-	IdempotencyKey       string `json:"idempotency_key"`
-	RequestedAt          string `json:"requested_at"`
+	SagaID         string `json:"saga_id"`
+	OrderID        string `json:"order_id"`
+	BuyerID        string `json:"buyer_id"`
+	BuyerEmail     string `json:"buyer_email"`
+	GigID          string `json:"gig_id"`
+	PackageID      string `json:"package_id"`
+	SellerUsername string `json:"seller_username,omitempty"`
+	IdempotencyKey string `json:"idempotency_key"`
+	RequestedAt    string `json:"requested_at"`
 }
 
 // StartOrderCommand is the synchronous order start command accepted by the
 // checkout saga gRPC boundary.
 type StartOrderCommand struct {
-	SagaID               string
-	OrderID              string
-	BuyerID              string
-	RealtimeConnectionID string
-	GigID                string
-	PackageID            string
-	SellerUsername       string
-	IdempotencyKey       string
-	RequestedAt          string
+	SagaID         string
+	OrderID        string
+	BuyerID        string
+	BuyerEmail     string
+	GigID          string
+	PackageID      string
+	SellerUsername string
+	IdempotencyKey string
+	RequestedAt    string
 }
 
 // StartOrderResult returns the snapshot needed by the buyer to continue the
@@ -129,12 +131,11 @@ type StartOrderResult struct {
 
 // ConfirmOrderCommand initiates the checkout session creation.
 type ConfirmOrderCommand struct {
-	SagaID               string
-	OrderID              string
-	BuyerID              string
-	RealtimeConnectionID string
-	IdempotencyKey       string
-	RequestedAt          string
+	SagaID         string
+	OrderID        string
+	BuyerID        string
+	IdempotencyKey string
+	RequestedAt    string
 }
 
 // ConfirmOrderResult returns the checkout URL and payment identifiers.
@@ -649,10 +650,11 @@ type RequestRevisionResult struct {
 	CurrentStep string
 }
 
-// OpenDisputeCommand stores the buyer dispute input.
+// OpenDisputeCommand stores the authenticated order-owner dispute input.
 type OpenDisputeCommand struct {
 	OrderID     string
-	BuyerID     string
+	ActorID     string
+	DisputeType string
 	Reason      string
 	RequestedAt string
 }
@@ -662,6 +664,35 @@ type OpenDisputeResult struct {
 	OrderID     string
 	Status      string
 	CurrentStep string
+}
+
+// SettleDisputeCommand resolves a dispute by splitting the settlement between
+// the freelancer and the customer.
+type SettleDisputeCommand struct {
+	OrderID              string
+	AdminUserID          string
+	PaymentID            string
+	SellerUserID         string
+	AmountCents          int64
+	Currency             string
+	FreelancerPercentage int32
+	CustomerPercentage   int32
+	IdempotencyKey       string
+	Reason               string
+	RequestedAt          string
+}
+
+// SettleDisputeResult reports the finalized dispute settlement outcome.
+type SettleDisputeResult struct {
+	OrderID               string
+	PaymentReleaseID      string
+	StripeTransferID      string
+	StripeRefundID        string
+	FreelancerAmountCents int64
+	CustomerAmountCents   int64
+	Status                string
+	CurrentStep           string
+	OccurredAt            string
 }
 
 // SaveDeliveryCommand persists the delivery snapshot in order-service.
@@ -701,6 +732,19 @@ type MarkOrderCompletedCommand struct {
 
 // MarkOrderCompletedResult reports the completed order state.
 type MarkOrderCompletedResult struct {
+	OrderID string
+	Status  string
+}
+
+// MarkDisputeResolvedCommand marks an order resolved by an admin settlement.
+type MarkDisputeResolvedCommand struct {
+	OrderID          string
+	PaymentReleaseID string
+	RequestedAt      string
+}
+
+// MarkDisputeResolvedResult reports the dispute-resolved order state.
+type MarkDisputeResolvedResult struct {
 	OrderID string
 	Status  string
 }
