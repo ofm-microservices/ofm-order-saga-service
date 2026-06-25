@@ -191,7 +191,7 @@ func (c *client) RequestRevision(ctx context.Context, cmd app.RequestRevisionCom
 }
 
 func (c *client) OpenDispute(ctx context.Context, cmd app.OpenDisputeCommand) (*app.OpenDisputeResult, error) {
-	_, err := c.cl.OpenDispute(ctx, &orderwritev1.OpenDisputeRequest{OrderId: cmd.OrderID, BuyerUserId: cmd.BuyerID, Reason: cmd.Reason, RequestedAt: cmd.RequestedAt})
+	_, err := c.cl.OpenDispute(ctx, &orderwritev1.OpenDisputeRequest{OrderId: cmd.OrderID, BuyerUserId: cmd.ActorID, DisputeType: cmd.DisputeType, Reason: cmd.Reason, RequestedAt: cmd.RequestedAt})
 	if err != nil {
 		return nil, err
 	}
@@ -204,6 +204,14 @@ func (c *client) MarkOrderCompleted(ctx context.Context, cmd app.MarkOrderComple
 		return nil, err
 	}
 	return &app.MarkOrderCompletedResult{OrderID: cmd.OrderID, Status: "completed"}, nil
+}
+
+func (c *client) MarkDisputeResolved(ctx context.Context, cmd app.MarkDisputeResolvedCommand) (*app.MarkDisputeResolvedResult, error) {
+	_, err := c.cl.MarkDisputeResolved(ctx, &orderwritev1.MarkDisputeResolvedRequest{OrderId: cmd.OrderID, PaymentReleaseId: cmd.PaymentReleaseID, RequestedAt: cmd.RequestedAt})
+	if err != nil {
+		return nil, err
+	}
+	return &app.MarkDisputeResolvedResult{OrderID: cmd.OrderID, Status: "dispute_resolved"}, nil
 }
 
 func (c *client) MarkReleaseFailed(ctx context.Context, cmd app.MarkReleaseFailedCommand) (*app.MarkReleaseFailedResult, error) {

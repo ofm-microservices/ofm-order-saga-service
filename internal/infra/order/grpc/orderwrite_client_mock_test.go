@@ -102,6 +102,26 @@ func (mr *MockOrderWriteServiceClientMockRecorder) GetOrderLifecycleSnapshot(ctx
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOrderLifecycleSnapshot", reflect.TypeOf((*MockOrderWriteServiceClient)(nil).GetOrderLifecycleSnapshot), varargs...)
 }
 
+// GetOrderCountByGigID mocks base method.
+func (m *MockOrderWriteServiceClient) GetOrderCountByGigID(ctx context.Context, in *v1.GetOrderCountByGigIDRequest, opts ...grpc.CallOption) (*v1.GetOrderCountByGigIDResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "GetOrderCountByGigID", varargs...)
+	ret0, _ := ret[0].(*v1.GetOrderCountByGigIDResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetOrderCountByGigID indicates an expected call of GetOrderCountByGigID.
+func (mr *MockOrderWriteServiceClientMockRecorder) GetOrderCountByGigID(ctx, in any, opts ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOrderCountByGigID", reflect.TypeOf((*MockOrderWriteServiceClient)(nil).GetOrderCountByGigID), varargs...)
+}
+
 // GetOrderPaymentSnapshot mocks base method.
 func (m *MockOrderWriteServiceClient) GetOrderPaymentSnapshot(ctx context.Context, in *v1.GetOrderPaymentSnapshotRequest, opts ...grpc.CallOption) (*v1.GetOrderPaymentSnapshotResponse, error) {
 	m.ctrl.T.Helper()
@@ -142,6 +162,46 @@ func (mr *MockOrderWriteServiceClientMockRecorder) GetOrderPreviewByID(ctx, in a
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOrderPreviewByID", reflect.TypeOf((*MockOrderWriteServiceClient)(nil).GetOrderPreviewByID), varargs...)
 }
 
+// GetOrderRequirementsByID mocks base method.
+func (m *MockOrderWriteServiceClient) GetOrderRequirementsByID(ctx context.Context, in *v1.GetOrderRequirementsByIDRequest, opts ...grpc.CallOption) (*v1.GetOrderRequirementsByIDResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "GetOrderRequirementsByID", varargs...)
+	ret0, _ := ret[0].(*v1.GetOrderRequirementsByIDResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetOrderRequirementsByID indicates an expected call of GetOrderRequirementsByID.
+func (mr *MockOrderWriteServiceClientMockRecorder) GetOrderRequirementsByID(ctx, in any, opts ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOrderRequirementsByID", reflect.TypeOf((*MockOrderWriteServiceClient)(nil).GetOrderRequirementsByID), varargs...)
+}
+
+// GetOrderDeliveryByID mocks base method.
+func (m *MockOrderWriteServiceClient) GetOrderDeliveryByID(ctx context.Context, in *v1.GetOrderDeliveryByIDRequest, opts ...grpc.CallOption) (*v1.GetOrderDeliveryByIDResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "GetOrderDeliveryByID", varargs...)
+	ret0, _ := ret[0].(*v1.GetOrderDeliveryByIDResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetOrderDeliveryByID indicates an expected call of GetOrderDeliveryByID.
+func (mr *MockOrderWriteServiceClientMockRecorder) GetOrderDeliveryByID(ctx, in any, opts ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOrderDeliveryByID", reflect.TypeOf((*MockOrderWriteServiceClient)(nil).GetOrderDeliveryByID), varargs...)
+}
+
 // MarkOrderCompleted mocks base method.
 func (m *MockOrderWriteServiceClient) MarkOrderCompleted(ctx context.Context, in *v1.MarkOrderCompletedRequest, opts ...grpc.CallOption) (*v1.MarkOrderCompletedResponse, error) {
 	m.ctrl.T.Helper()
@@ -160,6 +220,26 @@ func (mr *MockOrderWriteServiceClientMockRecorder) MarkOrderCompleted(ctx, in an
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]any{ctx, in}, opts...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkOrderCompleted", reflect.TypeOf((*MockOrderWriteServiceClient)(nil).MarkOrderCompleted), varargs...)
+}
+
+// MarkDisputeResolved mocks base method.
+func (m *MockOrderWriteServiceClient) MarkDisputeResolved(ctx context.Context, in *v1.MarkDisputeResolvedRequest, opts ...grpc.CallOption) (*v1.MarkDisputeResolvedResponse, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{ctx, in}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "MarkDisputeResolved", varargs...)
+	ret0, _ := ret[0].(*v1.MarkDisputeResolvedResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// MarkDisputeResolved indicates an expected call of MarkDisputeResolved.
+func (mr *MockOrderWriteServiceClientMockRecorder) MarkDisputeResolved(ctx, in any, opts ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]any{ctx, in}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkDisputeResolved", reflect.TypeOf((*MockOrderWriteServiceClient)(nil).MarkDisputeResolved), varargs...)
 }
 
 // MarkOrderFunded mocks base method.

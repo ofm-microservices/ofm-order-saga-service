@@ -35,7 +35,6 @@ var _ = Describe("Service", func() {
 			OrderID:              "order-1",
 			BuyerID:              "buyer-1",
 			BuyerEmail:           "buyer@example.com",
-			RealtimeConnectionID: "startup-123.01JTEST",
 			GigTitle:             "Logo design",
 			PackageTier:          "Pro",
 			PackageDescription:   "Fast delivery",

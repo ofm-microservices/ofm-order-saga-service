@@ -80,6 +80,33 @@ func (c *client) ReleaseFunds(ctx context.Context, cmd app.ReleaseFundsCommand) 
 	}, nil
 }
 
+func (c *client) SettleDispute(ctx context.Context, cmd app.SettleDisputeCommand) (*app.SettleDisputeResult, error) {
+	res, err := c.checkout.SettleDispute(ctx, &paymentcheckoutv1.SettleDisputeRequest{
+		OrderId:              cmd.OrderID,
+		PaymentId:            cmd.PaymentID,
+		SellerUserId:         cmd.SellerUserID,
+		AmountCents:          cmd.AmountCents,
+		Currency:             cmd.Currency,
+		FreelancerPercentage: cmd.FreelancerPercentage,
+		CustomerPercentage:   cmd.CustomerPercentage,
+		IdempotencyKey:       cmd.IdempotencyKey,
+		RequestedAt:          cmd.RequestedAt,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &app.SettleDisputeResult{
+		OrderID:               res.GetOrderId(),
+		PaymentReleaseID:      res.GetPaymentReleaseId(),
+		StripeTransferID:      res.GetStripeTransferId(),
+		StripeRefundID:        res.GetStripeRefundId(),
+		FreelancerAmountCents: res.GetFreelancerAmountCents(),
+		CustomerAmountCents:   res.GetCustomerAmountCents(),
+		Status:                res.GetStatus(),
+		OccurredAt:            res.GetOccurredAt(),
+	}, nil
+}
+
 func (c *client) GetReleaseByOrderID(ctx context.Context, orderID string) (*app.GetReleaseByOrderResult, error) {
 	res, err := c.checkout.GetReleaseByOrderId(ctx, &paymentcheckoutv1.GetReleaseByOrderIdRequest{OrderId: orderID})
 	if err != nil {

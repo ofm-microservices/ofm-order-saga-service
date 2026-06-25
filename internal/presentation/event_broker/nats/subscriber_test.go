@@ -67,6 +67,9 @@ func (s *recordingService) RequestRevision(context.Context, app.RequestRevisionC
 func (s *recordingService) OpenDispute(context.Context, app.OpenDisputeCommand) (*app.OpenDisputeResult, error) {
 	return nil, nil
 }
+func (s *recordingService) ResolveDispute(context.Context, app.SettleDisputeCommand) (*app.SettleDisputeResult, error) {
+	return nil, nil
+}
 
 func TestResultSubscriberSubscribeRegistersReleaseRequestAndDeadLetterConsumers(t *testing.T) {
 	broker := &recordingBroker{}

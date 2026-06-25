@@ -26,6 +26,7 @@ type Client interface {
 	RequestRevision(ctx context.Context, cmd app.RequestRevisionCommand) (*app.RequestRevisionResult, error)
 	OpenDispute(ctx context.Context, cmd app.OpenDisputeCommand) (*app.OpenDisputeResult, error)
 	MarkOrderCompleted(ctx context.Context, cmd app.MarkOrderCompletedCommand) (*app.MarkOrderCompletedResult, error)
+	MarkDisputeResolved(ctx context.Context, cmd app.MarkDisputeResolvedCommand) (*app.MarkDisputeResolvedResult, error)
 	MarkReleaseFailed(ctx context.Context, cmd app.MarkReleaseFailedCommand) (*app.MarkReleaseFailedResult, error)
 	Close() error
 }
