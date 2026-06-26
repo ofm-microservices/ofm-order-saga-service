@@ -93,6 +93,19 @@ type MessageHandler func(ctx context.Context, subject string, payload []byte) er
 // Logger aliases the shared structured logger.
 type Logger = logging.Logger
 
+// ChatCreateCommand requests chat-service to create an order-scoped chat.
+type ChatCreateCommand struct {
+	OrderID  string `json:"order_id"`
+	BuyerID  string `json:"buyer_id"`
+	SellerID string `json:"seller_id"`
+}
+
+// ChatCloseCommand requests chat-service to close an order chat.
+type ChatCloseCommand struct {
+	OrderID     string `json:"order_id"`
+	CloseReason string `json:"close_reason"`
+}
+
 // OrderSagaCommand is the root command accepted by the order saga.
 type OrderSagaCommand struct {
 	SagaID         string `json:"saga_id"`

@@ -13,6 +13,7 @@ type NATSConfig struct {
 	PaymentCommandsStream string `env:"STREAM_PAYMENT_COMMANDS" envDefault:"PAYMENT_COMMANDS"`
 	PaymentEventsStream   string `env:"STREAM_PAYMENT_EVENTS" envDefault:"PAYMENT_EVENTS"`
 	RealtimeEventsStream  string `env:"STREAM_REALTIME_EVENTS" envDefault:"REALTIME_EVENTS"`
+	ChatLifecycleStream   string `env:"STREAM_CHAT_LIFECYCLE" envDefault:"CHAT_LIFECYCLE"`
 
 	OrderCreateSubject       string `env:"SUBJECT_ORDER_CREATE" envDefault:"order.create"`
 	OrderCreateResultSubject string `env:"SUBJECT_ORDER_CREATE_RESULT" envDefault:"order.create.result"`
@@ -40,6 +41,8 @@ type NATSConfig struct {
 	OrderReleaseFailedSubject     string `env:"SUBJECT_ORDER_RELEASE_FAILED" envDefault:"order.release_failed"`
 	OrderReleaseRequestSubject    string `env:"SUBJECT_ORDER_RELEASE_REQUEST" envDefault:"order.release.request"`
 	PaymentReleaseSubject         string `env:"SUBJECT_PAYMENT_RELEASE" envDefault:"payment.release_funds"`
+	ChatCreateSubject             string `env:"SUBJECT_CHAT_CREATE" envDefault:"chat.create"`
+	ChatCloseSubject              string `env:"SUBJECT_CHAT_CLOSE" envDefault:"chat.close"`
 
 	CommandBatchSize int           `env:"COMMAND_BATCH_SIZE" envDefault:"32"`
 	CommandMaxWait   time.Duration `env:"COMMAND_MAX_WAIT" envDefault:"10ms"`

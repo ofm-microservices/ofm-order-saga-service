@@ -230,6 +230,9 @@ func (s *service) StartOrder(ctx context.Context, cmd StartOrderCommand) (*Start
 	}); err != nil {
 		return nil, err
 	}
+	if err := s.publishChatCreate(ctx, cmd.OrderID, cmd.BuyerID, snapshot.SellerID); err != nil {
+		return nil, err
+	}
 	return &StartOrderResult{
 		SagaID:   cmd.SagaID,
 		OrderID:  cmd.OrderID,
@@ -434,6 +437,7 @@ func (s *service) HandleReleaseFunds(ctx context.Context, orderID string) error 
 		_ = s.publishOrderLifecycle(ctx, snap.SagaID, domain.StepKeyAcceptDelivery, domain.SessionStatusCompleted, "order_completed", "Your order has been completed.", "success", snap, snap.BuyerID, true)
 		_ = s.publishLifecycleMail(ctx, snap, domain.SessionStatusCompleted, snap.BuyerID, "order_completed_buyer", "order_completed", "Your order has been completed.")
 		_ = s.publishLifecycleMail(ctx, snap, domain.SessionStatusCompleted, snap.SellerID, "order_completed_seller", "order_completed", "The buyer accepted the delivery and funds were released.")
+		_ = s.publishChatClose(ctx, snap.OrderID, "order_completed")
 		s.log.Info("order completed",
 			logging.Operation("order.completed"),
 			logging.String("order_id", snap.OrderID),
@@ -467,6 +471,9 @@ func (s *service) HandleReleaseFunds(ctx context.Context, orderID string) error 
 		return err
 	}
 	if err := s.publishLifecycleMail(ctx, snap, domain.SessionStatusCompleted, snap.SellerID, "order_completed_seller", "order_completed", "The buyer accepted the delivery and funds were released."); err != nil {
+		return err
+	}
+	if err := s.publishChatClose(ctx, snap.OrderID, "order_completed"); err != nil {
 		return err
 	}
 	s.log.Info("order completed",
@@ -595,6 +602,7 @@ func (s *service) ResolveDispute(ctx context.Context, cmd SettleDisputeCommand) 
 			return nil, err
 		}
 		_ = s.sessions.UpdateStatus(ctx, snap.SagaID, domain.SessionStatusDisputeResolved)
+		_ = s.publishChatClose(ctx, snap.OrderID, "dispute_resolved")
 		return &SettleDisputeResult{
 			OrderID:          snap.OrderID,
 			PaymentReleaseID: releaseState.PaymentReleaseID,
@@ -644,6 +652,13 @@ func (s *service) ResolveDispute(ctx context.Context, cmd SettleDisputeCommand) 
 			logging.Operation("order.dispute_resolution.mail"),
 			logging.String("order_id", snap.OrderID),
 			logging.String("user_id", snap.SellerID),
+			logging.Err(err),
+		)
+	}
+	if err := s.publishChatClose(ctx, snap.OrderID, "dispute_resolved"); err != nil {
+		s.log.Warn("failed to publish chat close after dispute resolution",
+			logging.Operation("order.dispute_resolution.chat_close"),
+			logging.String("order_id", snap.OrderID),
 			logging.Err(err),
 		)
 	}
@@ -1074,6 +1089,35 @@ func (s *service) publishLifecycleEvent(ctx context.Context, sagaID, orderID, st
 		return ErrPublishCommand
 	}
 	return s.broker.Publish(ctx, subject, payload)
+}
+
+func (s *service) publishChatCreate(ctx context.Context, orderID, buyerID, sellerID string) error {
+	if strings.TrimSpace(s.cfg.ChatCreateSubject) == "" {
+		return nil
+	}
+	payload, err := s.mapr.marshal(ChatCreateCommand{
+		OrderID:  orderID,
+		BuyerID:  buyerID,
+		SellerID: sellerID,
+	})
+	if err != nil {
+		return ErrPublishCommand
+	}
+	return s.broker.Publish(ctx, s.cfg.ChatCreateSubject, payload)
+}
+
+func (s *service) publishChatClose(ctx context.Context, orderID, closeReason string) error {
+	if strings.TrimSpace(s.cfg.ChatCloseSubject) == "" {
+		return nil
+	}
+	payload, err := s.mapr.marshal(ChatCloseCommand{
+		OrderID:     orderID,
+		CloseReason: closeReason,
+	})
+	if err != nil {
+		return ErrPublishCommand
+	}
+	return s.broker.Publish(ctx, s.cfg.ChatCloseSubject, payload)
 }
 
 func (s *service) resolveSagaID(ctx context.Context, sagaID *string, orderID string) error {
