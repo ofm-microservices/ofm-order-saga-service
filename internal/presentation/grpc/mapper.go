@@ -21,6 +21,13 @@ func mapOrderCheckoutError(err error) error {
 	case errors.Is(err, app.ErrOrderNotConfirmable),
 		errors.Is(err, app.ErrOrderAlreadyPaymentPending),
 		errors.Is(err, app.ErrOrderAlreadyFunded),
+		errors.Is(err, app.ErrOrderRequirementsIncomplete),
+		errors.Is(err, app.ErrOrderMessageIncomplete),
+		errors.Is(err, app.ErrOrderNotDeliverable),
+		errors.Is(err, app.ErrOrderNotAcceptable),
+		errors.Is(err, app.ErrOrderNotRevisionable),
+		errors.Is(err, app.ErrOrderNotDisputable),
+		errors.Is(err, app.ErrOrderReleaseFailed),
 		errors.Is(err, app.ErrConnectOnboardingIncomplete):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	default:

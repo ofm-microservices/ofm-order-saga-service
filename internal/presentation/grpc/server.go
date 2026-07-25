@@ -56,7 +56,14 @@ func (s *server) Shutdown(context.Context) error {
 }
 
 func (s *server) StartOrder(ctx context.Context, req *ordercheckoutv1.StartOrderRequest) (*ordercheckoutv1.StartOrderResponse, error) {
-	res, err := s.svc.StartOrder(ctx, app.StartOrderCommand{BuyerID: req.GetBuyerUserId(), GigID: req.GetGigId(), PackageID: req.GetPackageId(), IdempotencyKey: req.GetIdempotencyKey(), RealtimeConnectionID: req.GetRealtimeConnectionId(), RequestedAt: req.GetRequestedAt()})
+	res, err := s.svc.StartOrder(ctx, app.StartOrderCommand{
+		BuyerID:        req.GetBuyerUserId(),
+		BuyerEmail:     req.GetBuyerEmail(),
+		GigID:          req.GetGigId(),
+		PackageID:      req.GetPackageId(),
+		IdempotencyKey: req.GetIdempotencyKey(),
+		RequestedAt:    req.GetRequestedAt(),
+	})
 	if err != nil {
 		return nil, mapOrderCheckoutError(err)
 	}
@@ -90,4 +97,64 @@ func (s *server) ConfirmOrder(ctx context.Context, req *ordercheckoutv1.ConfirmO
 		return nil, mapOrderCheckoutError(err)
 	}
 	return &ordercheckoutv1.ConfirmOrderResponse{OrderId: res.OrderID, PaymentId: res.PaymentID, Status: res.Status, CheckoutUrl: res.CheckoutURL}, nil
+}
+
+func (s *server) DeliverOrder(ctx context.Context, req *ordercheckoutv1.DeliverOrderRequest) (*ordercheckoutv1.DeliverOrderResponse, error) {
+	res, err := s.svc.DeliverOrder(ctx, app.DeliverOrderCommand{
+		OrderID:       req.GetOrderId(),
+		SellerID:      req.GetSellerUserId(),
+		Message:       req.GetDeliveryMessage(),
+		AttachmentIDs: req.GetAttachmentIds(),
+		RequestedAt:   req.GetRequestedAt(),
+	})
+	if err != nil {
+		return nil, mapOrderCheckoutError(err)
+	}
+	return &ordercheckoutv1.DeliverOrderResponse{OrderId: res.OrderID, Status: res.Status, CurrentStep: res.CurrentStep}, nil
+}
+
+func (s *server) AcceptDelivery(ctx context.Context, req *ordercheckoutv1.AcceptDeliveryRequest) (*ordercheckoutv1.AcceptDeliveryResponse, error) {
+	res, err := s.svc.AcceptDelivery(ctx, app.AcceptDeliveryCommand{OrderID: req.GetOrderId(), BuyerID: req.GetBuyerUserId(), RequestedAt: req.GetRequestedAt()})
+	if err != nil {
+		return nil, mapOrderCheckoutError(err)
+	}
+	return &ordercheckoutv1.AcceptDeliveryResponse{OrderId: res.OrderID, Status: res.Status, CurrentStep: res.CurrentStep}, nil
+}
+
+func (s *server) RequestRevision(ctx context.Context, req *ordercheckoutv1.RequestRevisionRequest) (*ordercheckoutv1.RequestRevisionResponse, error) {
+	res, err := s.svc.RequestRevision(ctx, app.RequestRevisionCommand{OrderID: req.GetOrderId(), BuyerID: req.GetBuyerUserId(), Reason: req.GetReason(), RequestedAt: req.GetRequestedAt()})
+	if err != nil {
+		return nil, mapOrderCheckoutError(err)
+	}
+	return &ordercheckoutv1.RequestRevisionResponse{OrderId: res.OrderID, Status: res.Status, CurrentStep: res.CurrentStep}, nil
+}
+
+func (s *server) OpenDispute(ctx context.Context, req *ordercheckoutv1.OpenDisputeRequest) (*ordercheckoutv1.OpenDisputeResponse, error) {
+	res, err := s.svc.OpenDispute(ctx, app.OpenDisputeCommand{OrderID: req.GetOrderId(), ActorID: req.GetBuyerUserId(), Reason: req.GetReason(), RequestedAt: req.GetRequestedAt()})
+	if err != nil {
+		return nil, mapOrderCheckoutError(err)
+	}
+	return &ordercheckoutv1.OpenDisputeResponse{OrderId: res.OrderID, Status: res.Status, CurrentStep: res.CurrentStep}, nil
+}
+
+func (s *server) ResolveDispute(ctx context.Context, req *ordercheckoutv1.ResolveDisputeRequest) (*ordercheckoutv1.ResolveDisputeResponse, error) {
+	res, err := s.svc.ResolveDispute(ctx, app.SettleDisputeCommand{
+		OrderID:              req.GetOrderId(),
+		AdminUserID:          req.GetAdminUserId(),
+		FreelancerPercentage: req.GetFreelancerPercentage(),
+		CustomerPercentage:   req.GetCustomerPercentage(),
+		Reason:               req.GetReason(),
+		RequestedAt:          req.GetRequestedAt(),
+	})
+	if err != nil {
+		return nil, mapOrderCheckoutError(err)
+	}
+	return &ordercheckoutv1.ResolveDisputeResponse{
+		OrderId:          res.OrderID,
+		Status:           res.Status,
+		CurrentStep:      res.CurrentStep,
+		PaymentReleaseId: res.PaymentReleaseID,
+		StripeTransferId: res.StripeTransferID,
+		StripeRefundId:   res.StripeRefundID,
+	}, nil
 }

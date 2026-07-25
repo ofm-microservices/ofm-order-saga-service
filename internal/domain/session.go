@@ -16,8 +16,22 @@ const (
 	SessionStatusPendingPayment = "pending_payment"
 	// SessionStatusPaymentConfirmed marks the saga after payment confirmation.
 	SessionStatusPaymentConfirmed = "payment_confirmed"
+	// SessionStatusFunded marks the saga after payment capture but before delivery completion.
+	SessionStatusFunded = "funded"
+	// SessionStatusDelivered marks the seller delivery step.
+	SessionStatusDelivered = "delivered"
+	// SessionStatusReleasePending marks the payout release worker step.
+	SessionStatusReleasePending = "release_pending"
+	// SessionStatusRevisionRequested marks the buyer revision request step.
+	SessionStatusRevisionRequested = "revision_requested"
+	// SessionStatusDisputed marks the buyer dispute step.
+	SessionStatusDisputed = "disputed"
+	// SessionStatusDisputeResolved marks a settled dispute.
+	SessionStatusDisputeResolved = "dispute_resolved"
 	// SessionStatusCompleted marks a finalized order saga.
 	SessionStatusCompleted = "completed"
+	// SessionStatusReleaseFailed marks a payout release failure.
+	SessionStatusReleaseFailed = "release_failed"
 	// SessionStatusFailed marks a failed order saga.
 	SessionStatusFailed = "failed"
 
@@ -25,6 +39,8 @@ const (
 	StepStatusPending = "pending"
 	// StepStatusInProgress marks a step waiting on a downstream result.
 	StepStatusInProgress = "in_progress"
+	// StepStatusSuspended marks a step waiting on an external event.
+	StepStatusSuspended = "suspended"
 	// StepStatusCompleted marks a step that finished successfully.
 	StepStatusCompleted = "completed"
 	// StepStatusFailed marks a step that finished with a failure result.
@@ -46,36 +62,67 @@ const (
 	StepKeyRealtimeOrderConfirmed = "realtime.order.confirmed"
 	// StepKeyRealtimeOrderFailed identifies the failed notification step.
 	StepKeyRealtimeOrderFailed = "realtime.order.failed"
+	// StepKeyDeliverOrder identifies the seller delivery command.
+	StepKeyDeliverOrder = "order.deliver"
+	// StepKeyAcceptDelivery identifies the buyer acceptance command.
+	StepKeyAcceptDelivery = "order.accept_delivery"
+	// StepKeyRequestRevision identifies the buyer revision request command.
+	StepKeyRequestRevision = "order.request_revision"
+	// StepKeyOpenDispute identifies the buyer dispute command.
+	StepKeyOpenDispute = "order.open_dispute"
+	// StepKeyResolveDispute identifies the admin dispute resolution command.
+	StepKeyResolveDispute = "order.resolve_dispute"
+	// StepKeyReleaseFunds identifies the payout release command.
+	StepKeyReleaseFunds = "payment.release_funds"
+	// StepKeyRealtimeDelivery identifies the seller delivery realtime notification.
+	StepKeyRealtimeDelivery = "realtime.order.delivered"
+	// StepKeyRealtimeRevisionRequested identifies the revision realtime notification.
+	StepKeyRealtimeRevisionRequested = "realtime.order.revision_requested"
+	// StepKeyRealtimeDisputed identifies the dispute realtime notification.
+	StepKeyRealtimeDisputed = "realtime.order.disputed"
+	// StepKeyRealtimeCompleted identifies the completion realtime notification.
+	StepKeyRealtimeCompleted = "realtime.order.completed"
+	// StepKeyRealtimeReviewPrompt identifies the review prompt realtime notification.
+	StepKeyRealtimeReviewPrompt = "realtime.order.review_prompt"
+	// StepKeySendLifecycleMail identifies lifecycle notification emails.
+	StepKeySendLifecycleMail = "mail.order_lifecycle"
 )
 
 // Session is the persisted write-model snapshot of an order saga.
 type Session struct {
-	SagaID               string
-	OrderID              string
-	BuyerID              string
-	SellerID             string
-	BuyerEmail           string
-	RealtimeConnectionID string
-	GigID                string
-	GigTitle             string
-	PackageID            string
-	PackageTier          string
-	PackageDescription   string
-	PackageDeliveryDays  int32
-	PriceCents           int64
-	Currency             string
-	Status               string
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	SagaID              string
+	OrderID             string
+	BuyerID             string
+	SellerID            string
+	SellerUsername      string
+	BuyerEmail          string
+	GigID               string
+	GigTitle            string
+	PictureFileID       string
+	PackageID           string
+	PackageTier         string
+	PackageDescription  string
+	PackageDeliveryDays int32
+	PriceCents          int64
+	Currency            string
+	Status              string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 // Step is the persisted execution state of one orchestration step.
 type Step struct {
-	SagaID    string
-	StepKey   string
-	Status    string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	SagaID         string
+	StepKey        string
+	Status         string
+	Attempt        int32
+	MaxAttempts    int32
+	NextAttemptAt  *time.Time
+	LockedUntil    *time.Time
+	LastError      string
+	IdempotencyKey string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // SessionRepository persists order saga sessions owned by the saga domain.
