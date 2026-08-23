@@ -20,3 +20,4 @@ CREATE TABLE IF NOT EXISTS order_saga_sessions (
 
 CREATE INDEX IF NOT EXISTS order_saga_sessions_order_id_idx
 	ON order_saga_sessions (order_id);
+ALTER TABLE order_saga_sessions WITH cdc = {'enabled': true, 'preimage': 'full', 'postimage': true};

@@ -1,16 +1,20 @@
 package scylla
 
 import (
+	"context"
 	"strings"
 
 	"github.com/gocql/gocql"
 	"github.com/ofm-microservices/ofm-common/pkg/logging"
+	"github.com/ofm-microservices/ofm-common/pkg/observability/cql"
+	"github.com/ofm-microservices/ofm-common/pkg/resilience"
 	"order-saga-service/config"
 )
 
 // ConnectAndEnsureSchema opens the Scylla session after applying the saga migrations.
 func ConnectAndEnsureSchema(cfg config.ScyllaConfig, log logging.Logger) (*gocql.Session, error) {
 	cluster := gocql.NewCluster(cfg.Hosts...)
+	cluster.QueryObserver = cql.Observer{Service: "order-saga-service"}
 	cluster.Port = cfg.Port
 	cluster.Timeout = cfg.ConnectTimeout
 	cluster.ConnectTimeout = cfg.ConnectTimeout
@@ -21,7 +25,13 @@ func ConnectAndEnsureSchema(cfg config.ScyllaConfig, log logging.Logger) (*gocql
 	}
 
 	cluster.Keyspace = cfg.Keyspace
-	return cluster.CreateSession()
+	var session *gocql.Session
+	err := resilience.Retry(context.Background(), resilience.RetryPolicyFromEnv(), func(context.Context, int) error {
+		var err error
+		session, err = cluster.CreateSession()
+		return err
+	})
+	return session, err
 }
 
 func parseConsistency(level string) gocql.Consistency {

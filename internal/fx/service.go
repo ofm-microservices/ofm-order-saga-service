@@ -15,5 +15,5 @@ var ServiceModule = fx.Options(
 
 // ProvideService constructs the saga application service.
 func ProvideService(sessions application.SessionRepository, steps application.StepRepository, gigs application.GigSnapshotClient, auth application.AuthQueryClient, orders application.OrderWriteClient, payments application.PaymentCheckoutClient, broker application.EventBroker, cfg *config.Config, lg logging.Logger) (application.Service, error) {
-	return application.New(sessions, steps, gigs, auth, orders, payments, broker, cfg.NATS, lg)
+	return application.New(sessions, steps, gigs, auth, orders, payments, broker, cfg.Kafka, lg)
 }

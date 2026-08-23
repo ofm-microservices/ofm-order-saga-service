@@ -2,7 +2,7 @@ package config
 
 import "time"
 
-// PullConsumerConfig defines the runtime settings for one JetStream pull consumer.
+// PullConsumerConfig defines runtime settings for one Kafka pull consumer.
 type PullConsumerConfig struct {
 	Stream            string
 	Subject           string

@@ -11,6 +11,7 @@ import (
 
 	"github.com/gocql/gocql"
 	"github.com/ofm-microservices/ofm-common/pkg/logging"
+	"github.com/ofm-microservices/ofm-common/pkg/observability/cql"
 	"order-saga-service/config"
 )
 
@@ -20,6 +21,7 @@ func RunMigrations(cfg config.ScyllaConfig, log logging.Logger) error {
 		return ErrNilLogger
 	}
 	cluster := gocql.NewCluster(cfg.Hosts...)
+	cluster.QueryObserver = cql.Observer{Service: "order-saga-service/migrations"}
 	cluster.Port = cfg.Port
 	cluster.Timeout = cfg.ConnectTimeout
 	cluster.ConnectTimeout = cfg.ConnectTimeout
