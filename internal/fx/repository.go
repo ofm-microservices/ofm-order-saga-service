@@ -1,26 +1,22 @@
 package appfx
 
 import (
-	"github.com/gocql/gocql"
+	"github.com/jmoiron/sqlx"
 	"github.com/ofm-microservices/ofm-common/pkg/logging"
-	"order-saga-service/internal/domain"
-	scyllarepo "order-saga-service/internal/infra/scylla"
-
 	"go.uber.org/fx"
+	"order-saga-service/internal/domain"
+	pgrepo "order-saga-service/internal/infra/postgres"
 )
 
-// RepoModule provides the concrete saga repositories.
-var RepoModule = fx.Options(
-	fx.Provide(ProvideSessionRepository),
-	fx.Provide(ProvideStepRepository),
-)
+// RepoModule provides PostgreSQL-backed saga repositories.
+var RepoModule = fx.Options(fx.Provide(ProvideSessionRepositoryPostgres), fx.Provide(ProvideStepRepositoryPostgres))
 
-// ProvideSessionRepository constructs the Scylla-backed session repository.
-func ProvideSessionRepository(db *gocql.Session, lg logging.Logger) (domain.SessionRepository, error) {
-	return scyllarepo.NewSessionRepository(db, lg)
+// ProvideSessionRepositoryPostgres constructs the PostgreSQL session repository.
+func ProvideSessionRepositoryPostgres(db *sqlx.DB, lg logging.Logger) (domain.SessionRepository, error) {
+	return pgrepo.NewSessionRepository(db, lg)
 }
 
-// ProvideStepRepository constructs the Scylla-backed step repository.
-func ProvideStepRepository(db *gocql.Session, lg logging.Logger) (domain.StepRepository, error) {
-	return scyllarepo.NewStepRepository(db, lg)
+// ProvideStepRepositoryPostgres constructs the PostgreSQL step repository.
+func ProvideStepRepositoryPostgres(db *sqlx.DB, lg logging.Logger) (domain.StepRepository, error) {
+	return pgrepo.NewStepRepository(db, lg)
 }

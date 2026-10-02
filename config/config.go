@@ -6,7 +6,7 @@ import "github.com/caarlos0/env/v11"
 type Config struct {
 	App     AppConfig            `envPrefix:"APP_"`
 	GRPC    GRPCConfig           `envPrefix:"GRPC_"`
-	Scylla  ScyllaConfig         `envPrefix:"SCYLLA_"`
+	DB      DBConfig             `envPrefix:"DB_"`
 	Auth    AuthServiceConfig    `envPrefix:"AUTH_SERVICE_"`
 	Gig     GigServiceConfig     `envPrefix:"GIG_SERVICE_"`
 	Order   OrderServiceConfig   `envPrefix:"ORDER_SERVICE_"`
