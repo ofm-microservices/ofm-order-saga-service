@@ -20,6 +20,7 @@ type Service interface {
 	ConfirmOrder(ctx context.Context, cmd ConfirmOrderCommand) (*ConfirmOrderResult, error)
 	SubmitRequirements(ctx context.Context, cmd SubmitRequirementsCommand) (*SubmitRequirementsResult, error)
 	SubmitMessage(ctx context.Context, cmd SubmitMessageCommand) (*SubmitMessageResult, error)
+	CompleteAttachmentUpload(ctx context.Context, cmd CompleteAttachmentUploadCommand) (*CompleteAttachmentUploadResult, error)
 	DeliverOrder(ctx context.Context, cmd DeliverOrderCommand) (*DeliverOrderResult, error)
 	AcceptDelivery(ctx context.Context, cmd AcceptDeliveryCommand) (*AcceptDeliveryResult, error)
 	RequestRevision(ctx context.Context, cmd RequestRevisionCommand) (*RequestRevisionResult, error)
@@ -122,15 +123,15 @@ type OrderSagaCommand struct {
 // StartOrderCommand is the synchronous order start command accepted by the
 // checkout saga gRPC boundary.
 type StartOrderCommand struct {
-	SagaID         string
-	OrderID        string
-	BuyerID        string
-	BuyerEmail     string
-	GigID          string
-	PackageID      string
-	SellerUsername string
-	IdempotencyKey string
-	RequestedAt    string
+	SagaID         string `json:"saga_id"`
+	OrderID        string `json:"order_id"`
+	BuyerID        string `json:"buyer_id"`
+	BuyerEmail     string `json:"buyer_email"`
+	GigID          string `json:"gig_id"`
+	PackageID      string `json:"package_id"`
+	SellerUsername string `json:"seller_username"`
+	IdempotencyKey string `json:"idempotency_key"`
+	RequestedAt    string `json:"requested_at"`
 }
 
 // StartOrderResult returns the snapshot needed by the buyer to continue the
@@ -188,6 +189,21 @@ type SubmitMessageResult struct {
 	OrderID     string
 	Status      string
 	CurrentStep string
+}
+
+// CompleteAttachmentUploadCommand attaches an uploaded file to the order.
+type CompleteAttachmentUploadCommand struct {
+	OrderID      string
+	BuyerID      string
+	AttachmentID string
+	FileID       string
+}
+
+// CompleteAttachmentUploadResult reports the persisted order attachment.
+type CompleteAttachmentUploadResult struct {
+	OrderID      string
+	AttachmentID string
+	Status       string
 }
 
 // CreateDraftOrderCommand persists the authoritative draft snapshot in
@@ -262,6 +278,8 @@ type SaveBuyerInitialMessageResult struct {
 type AttachFileCommand struct {
 	OrderID      string
 	AttachmentID string
+	FileID       string
+	SortOrder    int32
 }
 
 // AttachFileResult reports the updated order status.
@@ -611,10 +629,13 @@ type MailOrderLifecycleData struct {
 
 // realtimeDeliveryMessage mirrors the envelope consumed by realtime-service.
 type realtimeDeliveryMessage struct {
+	EventID       string          `json:"event_id"`
 	ConnectionID  string          `json:"connection_id"`
 	UserID        string          `json:"user_id"`
+	AggregateID   string          `json:"aggregate_id,omitempty"`
 	DeliveryScope string          `json:"delivery_scope,omitempty"`
 	Type          string          `json:"type"`
+	TestRunID     string          `json:"test_run_id,omitempty"`
 	Payload       json.RawMessage `json:"payload"`
 }
 

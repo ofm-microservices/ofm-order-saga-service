@@ -55,6 +55,9 @@ func (s *recordingService) SubmitRequirements(context.Context, app.SubmitRequire
 func (s *recordingService) SubmitMessage(context.Context, app.SubmitMessageCommand) (*app.SubmitMessageResult, error) {
 	return nil, nil
 }
+func (s *recordingService) CompleteAttachmentUpload(context.Context, app.CompleteAttachmentUploadCommand) (*app.CompleteAttachmentUploadResult, error) {
+	return nil, nil
+}
 func (s *recordingService) DeliverOrder(context.Context, app.DeliverOrderCommand) (*app.DeliverOrderResult, error) {
 	return nil, nil
 }

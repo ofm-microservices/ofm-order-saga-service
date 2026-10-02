@@ -2,6 +2,7 @@ package appfx
 
 import (
 	"context"
+	"time"
 
 	"github.com/ofm-microservices/ofm-common/pkg/logging"
 	sharedmetrics "github.com/ofm-microservices/ofm-common/pkg/observability/metrics"
@@ -17,13 +18,49 @@ import (
 var PresentationModule = fx.Options(
 	fx.Provide(ProvideResultSubscriber),
 	fx.Provide(ProvideStartSubscriber),
+	fx.Provide(ProvideRecoverySubscriber),
 	fx.Provide(ProvideGRPCServer),
 	fx.Invoke(InvokeSubscribeResults),
 	fx.Invoke(InvokeSubscribeStart),
+	fx.Invoke(InvokeSubscribeRecovery),
 	fx.Invoke(InvokeRunGRPCServer),
 	fx.Provide(ProvideMeter),
 	fx.Invoke(InvokeRunMetricsServer),
 )
+
+// ProvideRecoverySubscriber constructs the order-saga migration consumer.
+func ProvideRecoverySubscriber(broker app.EventBroker, svc app.Service, cfg *config.Config, lg logging.Logger) (events.RecoverySubscriber, error) {
+	return events.NewRecoverySubscriber(broker, svc, cfg.Kafka, lg)
+}
+
+// InvokeSubscribeRecovery starts order-saga recovery consumption during startup.
+func InvokeSubscribeRecovery(lc fx.Lifecycle, sub events.RecoverySubscriber, lg logging.Logger) {
+	var cancel context.CancelFunc
+	lc.Append(fx.Hook{OnStart: func(context.Context) error {
+		ctx, stop := context.WithCancel(context.Background())
+		cancel = stop
+		go func() {
+			for ctx.Err() == nil {
+				if err := sub.Subscribe(ctx); err != nil && ctx.Err() == nil {
+					lg.Error("order saga recovery consumer stopped; retrying", logging.Err(err))
+					timer := time.NewTimer(time.Second)
+					select {
+					case <-ctx.Done():
+						timer.Stop()
+						return
+					case <-timer.C:
+					}
+				}
+			}
+		}()
+		return nil
+	}, OnStop: func(context.Context) error {
+		if cancel != nil {
+			cancel()
+		}
+		return nil
+	}})
+}
 
 // ProvideMeter constructs the service-owned Prometheus meter.
 func ProvideMeter(cfg *config.Config) sharedmetrics.Meter {
