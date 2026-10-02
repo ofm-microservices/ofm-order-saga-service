@@ -11,6 +11,9 @@ type KafkaConfig struct {
 	Password                      string        `env:"LEGACY_NATS_PASSWORD"`
 	Brokers                       []string      `env:"BROKERS" envSeparator:"," envDefault:"127.0.0.1:9092"`
 	GroupID                       string        `env:"ORDER_SAGA_GROUP_ID" envDefault:"order-saga-service"`
+	RecoveryTopic                 string        `env:"ORDER_SAGA_RECOVERY_TOPIC" envDefault:"migration.recovery.commands.order_saga"`
+	RecoveryGroup                 string        `env:"ORDER_SAGA_RECOVERY_GROUP" envDefault:"order-saga-service-recovery"`
+	RecoveryCompletedTopic        string        `env:"ORDER_SAGA_RECOVERY_COMPLETED_TOPIC" envDefault:"migration.recovery.completed"`
 	StartTopic                    string        `env:"ORDER_SAGA_START_TOPIC" envDefault:"order.saga.start"`
 	OrderResultTopic              string        `env:"ORDER_SAGA_ORDER_RESULT_TOPIC" envDefault:"order.create.result"`
 	PaymentIntentTopic            string        `env:"ORDER_SAGA_PAYMENT_INTENT_TOPIC" envDefault:"payment.intent.result"`

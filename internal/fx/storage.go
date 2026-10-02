@@ -2,37 +2,26 @@ package appfx
 
 import (
 	"context"
-
-	"github.com/gocql/gocql"
+	"github.com/jmoiron/sqlx"
 	"github.com/ofm-microservices/ofm-common/pkg/logging"
-	"order-saga-service/config"
-	scyllastore "order-saga-service/pkg/storage/scylla"
-
 	"go.uber.org/fx"
+	"order-saga-service/config"
+	pkgpostgres "order-saga-service/pkg/storage/postgres"
 )
 
-// StorageModule provides the Scylla session used by the order saga.
-var StorageModule = fx.Options(
-	fx.Invoke(InvokeRunMigrations),
-	fx.Provide(ProvideScyllaSession),
-)
+// StorageModule provides the PostgreSQL database used by order-saga-service.
+var StorageModule = fx.Options(fx.Provide(ProvidePostgresDB))
 
-// InvokeRunMigrations applies the saga's CQL migrations before the session is opened.
-func InvokeRunMigrations(cfg *config.Config, lg logging.Logger) error {
-	if err := scyllastore.RunMigrations(cfg.Scylla, lg); err != nil {
-		lg.Error("run migrations failed", logging.Err(err))
-		return err
+// ProvidePostgresDB opens the order-saga PostgreSQL pool after migrations.
+func ProvidePostgresDB(lc fx.Lifecycle, cfg *config.Config, lg logging.Logger) (*sqlx.DB, error) {
+	if err := pkgpostgres.RunMigrations(cfg.DB); err != nil {
+		return nil, err
 	}
-	lg.Info("migrations applied")
-	return nil
-}
-
-// ProvideScyllaSession connects to Scylla after migrations have been applied.
-func ProvideScyllaSession(lc fx.Lifecycle, cfg *config.Config, lg logging.Logger) (*gocql.Session, error) {
-	session, err := scyllastore.ConnectAndEnsureSchema(cfg.Scylla, lg)
+	db, err := pkgpostgres.Open(cfg.DB)
 	if err != nil {
 		return nil, err
 	}
-	lc.Append(fx.Hook{OnStop: func(context.Context) error { session.Close(); return nil }})
-	return session, nil
+	lc.Append(fx.Hook{OnStop: func(context.Context) error { return db.Close() }})
+	lg.Info("PostgreSQL connected")
+	return db, nil
 }

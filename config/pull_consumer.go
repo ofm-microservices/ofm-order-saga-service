@@ -4,6 +4,7 @@ import "time"
 
 // PullConsumerConfig defines runtime settings for one Kafka pull consumer.
 type PullConsumerConfig struct {
+	GroupID           string
 	Stream            string
 	Subject           string
 	Durable           string
