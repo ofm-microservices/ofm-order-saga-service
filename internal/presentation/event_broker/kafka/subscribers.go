@@ -66,8 +66,23 @@ func (s *ResultSubscriber) Subscribe(ctx context.Context) error {
 			topic   string
 			handler app.MessageHandler
 		}) {
-			if err := s.broker.RunPullConsumer(ctx, config.PullConsumerConfig{Subject: t.topic, Workers: 1, QueueSize: 32, AckWait: 30 * time.Second, MaxDeliver: 5}, t.handler); err != nil {
-				s.log.Error("order-saga Kafka consumer failed", logging.String("topic", t.topic), logging.Err(err))
+			for ctx.Err() == nil {
+				err := s.broker.RunPullConsumer(ctx, config.PullConsumerConfig{Subject: t.topic, Workers: 1, QueueSize: 32, AckWait: 30 * time.Second, MaxDeliver: 5}, t.handler)
+				if ctx.Err() != nil {
+					return
+				}
+				if err != nil {
+					s.log.Error("order-saga Kafka consumer failed; reconnecting", logging.String("topic", t.topic), logging.Err(err))
+				}
+				timer := time.NewTimer(time.Second)
+				select {
+				case <-ctx.Done():
+					if !timer.Stop() {
+						<-timer.C
+					}
+					return
+				case <-timer.C:
+				}
 			}
 		}(t)
 	}

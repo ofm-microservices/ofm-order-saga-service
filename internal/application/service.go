@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/ofm-microservices/ofm-common/pkg/logging"
+	"github.com/ofm-microservices/ofm-common/pkg/observability/metadata"
 	orderflowv1 "github.com/ofm-microservices/ofm-common/proto/orderflow/v1"
 	paymentflowv1 "github.com/ofm-microservices/ofm-common/proto/paymentflow/v1"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -164,12 +165,6 @@ func (s *service) StartOrder(ctx context.Context, cmd StartOrderCommand) (*Start
 	if cmd.RequestedAt == "" {
 		cmd.RequestedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	}
-	if strings.TrimSpace(cmd.SagaID) == "" {
-		cmd.SagaID = uuid.Must(uuid.NewV7()).String()
-	}
-	if strings.TrimSpace(cmd.OrderID) == "" {
-		cmd.OrderID = uuid.Must(uuid.NewV7()).String()
-	}
 	snapshot, err := s.gigs.GetOrderStartSnapshot(ctx, cmd.GigID, cmd.PackageID)
 	if err != nil {
 		return nil, err
@@ -187,6 +182,15 @@ func (s *service) StartOrder(ctx context.Context, cmd StartOrderCommand) (*Start
 		if err != nil {
 			return nil, err
 		}
+	}
+	// Allocate externally visible identifiers only after every dependent
+	// lookup required to start the order has succeeded. An ID generated before
+	// this point is not an order identity and must never escape an error path.
+	if strings.TrimSpace(cmd.SagaID) == "" {
+		cmd.SagaID = uuid.Must(uuid.NewV7()).String()
+	}
+	if strings.TrimSpace(cmd.OrderID) == "" {
+		cmd.OrderID = uuid.Must(uuid.NewV7()).String()
 	}
 	session := domain.Session{
 		SagaID:              cmd.SagaID,
@@ -328,6 +332,9 @@ func (s *service) SubmitRequirements(ctx context.Context, cmd SubmitRequirements
 	if _, err := s.orders.SaveRequirementAnswers(ctx, SaveRequirementAnswersCommand{OrderID: cmd.OrderID, Answers: cmd.Answers}); err != nil {
 		return nil, err
 	}
+	if err := s.publishOrderProgressNotification(ctx, cmd.OrderID, "order.requirements_completed", "requirements_completed"); err != nil {
+		return nil, err
+	}
 	return &SubmitRequirementsResult{OrderID: cmd.OrderID, Status: "requirements_completed", CurrentStep: "message_pending"}, nil
 }
 
@@ -335,7 +342,48 @@ func (s *service) SubmitMessage(ctx context.Context, cmd SubmitMessageCommand) (
 	if _, err := s.orders.SaveBuyerInitialMessage(ctx, SaveBuyerInitialMessageCommand{OrderID: cmd.OrderID, Message: cmd.Message}); err != nil {
 		return nil, err
 	}
+	if err := s.publishOrderProgressNotification(ctx, cmd.OrderID, "order.message_completed", "message_completed"); err != nil {
+		return nil, err
+	}
 	return &SubmitMessageResult{OrderID: cmd.OrderID, Status: "message_completed", CurrentStep: "attachments_pending"}, nil
+}
+
+func (s *service) CompleteAttachmentUpload(ctx context.Context, cmd CompleteAttachmentUploadCommand) (*CompleteAttachmentUploadResult, error) {
+	snap, err := s.orders.GetOrderLifecycleSnapshot(ctx, cmd.OrderID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(snap.BuyerID) != strings.TrimSpace(cmd.BuyerID) {
+		return nil, ErrOrderNotOwned
+	}
+	if strings.TrimSpace(cmd.AttachmentID) == "" || strings.TrimSpace(cmd.FileID) == "" {
+		return nil, ErrInvalidAttachment
+	}
+	if _, err := s.orders.AttachFile(ctx, AttachFileCommand{OrderID: cmd.OrderID, AttachmentID: cmd.AttachmentID, FileID: cmd.FileID, SortOrder: 1}); err != nil {
+		return nil, err
+	}
+	return &CompleteAttachmentUploadResult{OrderID: cmd.OrderID, AttachmentID: cmd.AttachmentID, Status: "attachments_completed"}, nil
+}
+
+func (s *service) publishOrderProgressNotification(ctx context.Context, orderID, eventType, status string) error {
+	snap, err := s.orders.GetOrderPaymentSnapshot(ctx, orderID)
+	if err != nil {
+		return err
+	}
+	payload, err := s.mapr.marshal(map[string]string{"order_id": orderID, "status": status, "type": eventType})
+	if err != nil {
+		return ErrPublishCommand
+	}
+	values := metadata.FromContext(ctx)
+	eventID, err := uuid.NewV7()
+	if err != nil {
+		return ErrPublishCommand
+	}
+	delivery, err := s.mapr.marshal(realtimeDeliveryMessage{EventID: eventID.String(), UserID: snap.BuyerID, AggregateID: orderID, DeliveryScope: "user", Type: eventType, TestRunID: values.TestRunID, Payload: payload})
+	if err != nil {
+		return ErrPublishCommand
+	}
+	return s.broker.Publish(ctx, realtimeSubject, delivery)
 }
 
 func (s *service) DeliverOrder(ctx context.Context, cmd DeliverOrderCommand) (*DeliverOrderResult, error) {
@@ -362,7 +410,7 @@ func (s *service) DeliverOrder(ctx context.Context, cmd DeliverOrderCommand) (*D
 		return nil, err
 	}
 	_ = s.sessions.UpdateStatus(ctx, snap.SagaID, domain.SessionStatusDelivered)
-	if err := s.publishOrderLifecycle(ctx, snap.SagaID, domain.StepKeyDeliverOrder, domain.SessionStatusDelivered, "order_delivered", "Your delivery has been submitted.", "success", snap, cmd.SellerID, false); err != nil {
+	if err := s.publishOrderLifecycle(ctx, snap.SagaID, domain.StepKeyDeliverOrder, domain.SessionStatusDelivered, "order_delivered", "order.delivered", "Your delivery has been submitted.", "success", snap, cmd.SellerID, false); err != nil {
 		s.log.Warn("failed to publish order delivery lifecycle notification",
 			logging.Operation("order.delivery.notification"),
 			logging.String("order_id", snap.OrderID),
@@ -433,8 +481,11 @@ func (s *service) HandleReleaseFunds(ctx context.Context, orderID string) error 
 		if _, err := s.orders.MarkOrderCompleted(ctx, MarkOrderCompletedCommand{OrderID: snap.OrderID, PaymentReleaseID: releaseState.PaymentReleaseID, RequestedAt: time.Now().UTC().Format(time.RFC3339Nano)}); err != nil {
 			return err
 		}
+		if err := s.steps.UpdateStatus(ctx, snap.SagaID, domain.StepKeyReleaseFunds, domain.StepStatusCompleted); err != nil {
+			return err
+		}
 		_ = s.sessions.UpdateStatus(ctx, snap.SagaID, domain.SessionStatusCompleted)
-		_ = s.publishOrderLifecycle(ctx, snap.SagaID, domain.StepKeyAcceptDelivery, domain.SessionStatusCompleted, "order_completed", "Your order has been completed.", "success", snap, snap.BuyerID, true)
+		_ = s.publishOrderLifecycle(ctx, snap.SagaID, domain.StepKeyAcceptDelivery, domain.SessionStatusCompleted, "order_completed", "order.completed", "Your order has been completed.", "success", snap, snap.BuyerID, true)
 		_ = s.publishLifecycleMail(ctx, snap, domain.SessionStatusCompleted, snap.BuyerID, "order_completed_buyer", "order_completed", "Your order has been completed.")
 		_ = s.publishLifecycleMail(ctx, snap, domain.SessionStatusCompleted, snap.SellerID, "order_completed_seller", "order_completed", "The buyer accepted the delivery and funds were released.")
 		_ = s.publishChatClose(ctx, snap.OrderID, "order_completed")
@@ -463,8 +514,11 @@ func (s *service) HandleReleaseFunds(ctx context.Context, orderID string) error 
 	if _, err := s.orders.MarkOrderCompleted(ctx, MarkOrderCompletedCommand{OrderID: snap.OrderID, PaymentReleaseID: releaseResult.PaymentReleaseID, RequestedAt: time.Now().UTC().Format(time.RFC3339Nano)}); err != nil {
 		return err
 	}
+	if err := s.steps.UpdateStatus(ctx, snap.SagaID, domain.StepKeyReleaseFunds, domain.StepStatusCompleted); err != nil {
+		return err
+	}
 	_ = s.sessions.UpdateStatus(ctx, snap.SagaID, domain.SessionStatusCompleted)
-	if err := s.publishOrderLifecycle(ctx, snap.SagaID, domain.StepKeyAcceptDelivery, domain.SessionStatusCompleted, "order_completed", "Your order has been completed.", "success", snap, snap.BuyerID, true); err != nil {
+	if err := s.publishOrderLifecycle(ctx, snap.SagaID, domain.StepKeyAcceptDelivery, domain.SessionStatusCompleted, "order_completed", "order.completed", "Your order has been completed.", "success", snap, snap.BuyerID, true); err != nil {
 		return err
 	}
 	if err := s.publishLifecycleMail(ctx, snap, domain.SessionStatusCompleted, snap.BuyerID, "order_completed_buyer", "order_completed", "Your order has been completed."); err != nil {
@@ -512,7 +566,7 @@ func (s *service) RequestRevision(ctx context.Context, cmd RequestRevisionComman
 		return nil, err
 	}
 	_ = s.sessions.UpdateStatus(ctx, snap.SagaID, domain.SessionStatusRevisionRequested)
-	if err := s.publishOrderLifecycle(ctx, snap.SagaID, domain.StepKeyRequestRevision, domain.SessionStatusRevisionRequested, "order_revision_requested", "The buyer requested a revision.", "warning", snap, snap.SellerID, false); err != nil {
+	if err := s.publishOrderLifecycle(ctx, snap.SagaID, domain.StepKeyRequestRevision, domain.SessionStatusRevisionRequested, "order_revision_requested", "order.revision_requested", "The buyer requested a revision.", "warning", snap, snap.SellerID, false); err != nil {
 		return nil, err
 	}
 	if err := s.publishLifecycleMail(ctx, snap, domain.SessionStatusRevisionRequested, snap.SellerID, "order_revision_requested_seller", "order_revision_requested", "The buyer requested a revision."); err != nil {
@@ -554,7 +608,7 @@ func (s *service) OpenDispute(ctx context.Context, cmd OpenDisputeCommand) (*Ope
 		return nil, err
 	}
 	_ = s.sessions.UpdateStatus(ctx, snap.SagaID, domain.SessionStatusDisputed)
-	if err := s.publishOrderLifecycleToParticipants(ctx, snap.SagaID, domain.StepKeyOpenDispute, domain.SessionStatusDisputed, "order_disputed", "The order is under review.", "warning", snap, snap.BuyerID, snap.SellerID); err != nil {
+	if err := s.publishOrderLifecycleToParticipants(ctx, snap.SagaID, domain.StepKeyOpenDispute, domain.SessionStatusDisputed, "order_disputed", "order.disputed", "The order is under review.", "warning", snap, snap.BuyerID, snap.SellerID); err != nil {
 		s.log.Warn("failed to publish order dispute lifecycle notification",
 			logging.Operation("order.dispute.notification"),
 			logging.String("order_id", snap.OrderID),
@@ -632,7 +686,7 @@ func (s *service) ResolveDispute(ctx context.Context, cmd SettleDisputeCommand) 
 		return nil, err
 	}
 	_ = s.sessions.UpdateStatus(ctx, snap.SagaID, domain.SessionStatusDisputeResolved)
-	if err := s.publishOrderLifecycleToParticipants(ctx, snap.SagaID, domain.StepKeyResolveDispute, domain.SessionStatusDisputeResolved, "order_dispute_resolved", "The dispute was resolved.", "success", snap, snap.BuyerID, snap.SellerID); err != nil {
+	if err := s.publishOrderLifecycleToParticipants(ctx, snap.SagaID, domain.StepKeyResolveDispute, domain.SessionStatusDisputeResolved, "order_dispute_resolved", "order.dispute_resolved", "The dispute was resolved.", "success", snap, snap.BuyerID, snap.SellerID); err != nil {
 		s.log.Warn("failed to publish dispute resolution lifecycle notification",
 			logging.Operation("order.dispute_resolution.notification"),
 			logging.String("order_id", snap.OrderID),
@@ -835,7 +889,7 @@ func (s *service) sendReceiptEmail(ctx context.Context, sagaID string) error {
 	return nil
 }
 
-func (s *service) publishOrderLifecycle(ctx context.Context, sagaID, stepKey, orderStatus, kind, message, severity string, snap *OrderLifecycleSnapshot, userID string, isBuyer bool) error {
+func (s *service) publishOrderLifecycle(ctx context.Context, sagaID, stepKey, orderStatus, kind, eventType, message, severity string, snap *OrderLifecycleSnapshot, userID string, isBuyer bool) error {
 	step, err := s.ensureNotificationStep(ctx, sagaID, stepKey)
 	if err != nil {
 		return err
@@ -868,7 +922,7 @@ func (s *service) publishOrderLifecycle(ctx context.Context, sagaID, stepKey, or
 	if err != nil {
 		return ErrPublishCommand
 	}
-	if err := s.publishUserRealtimeDelivery(ctx, userID, payload); err != nil {
+	if err := s.publishUserRealtimeDelivery(ctx, userID, snap.OrderID, eventType, payload); err != nil {
 		return err
 	}
 	if err := s.publishLifecycleEvent(ctx, sagaID, snap.OrderID, stepKey, orderStatus, ""); err != nil {
@@ -880,7 +934,7 @@ func (s *service) publishOrderLifecycle(ctx context.Context, sagaID, stepKey, or
 	return nil
 }
 
-func (s *service) publishOrderLifecycleToParticipants(ctx context.Context, sagaID, stepKey, orderStatus, kind, message, severity string, snap *OrderLifecycleSnapshot, userIDs ...string) error {
+func (s *service) publishOrderLifecycleToParticipants(ctx context.Context, sagaID, stepKey, orderStatus, kind, eventType, message, severity string, snap *OrderLifecycleSnapshot, userIDs ...string) error {
 	step, err := s.ensureNotificationStep(ctx, sagaID, stepKey)
 	if err != nil {
 		return err
@@ -923,7 +977,7 @@ func (s *service) publishOrderLifecycleToParticipants(ctx context.Context, sagaI
 		if err != nil {
 			return ErrPublishCommand
 		}
-		if err := s.publishUserRealtimeDelivery(ctx, userID, payload); err != nil {
+		if err := s.publishUserRealtimeDelivery(ctx, userID, snap.OrderID, eventType, payload); err != nil {
 			return err
 		}
 	}
@@ -961,7 +1015,7 @@ func (s *service) publishReviewPrompt(ctx context.Context, snap *OrderLifecycleS
 	if err != nil {
 		return ErrPublishCommand
 	}
-	if err := s.publishUserRealtimeDelivery(ctx, snap.BuyerID, payload); err != nil {
+	if err := s.publishUserRealtimeDelivery(ctx, snap.BuyerID, snap.OrderID, "review.prompt", payload); err != nil {
 		return err
 	}
 	return s.steps.UpdateStatus(ctx, snap.SagaID, domain.StepKeyRealtimeReviewPrompt, domain.StepStatusCompleted)
@@ -1043,11 +1097,19 @@ func (s *service) publishLifecycleMail(ctx context.Context, snap *OrderLifecycle
 	return s.steps.UpdateStatus(ctx, snap.SagaID, stepKey, domain.StepStatusCompleted)
 }
 
-func (s *service) publishUserRealtimeDelivery(ctx context.Context, userID string, payload []byte) error {
+func (s *service) publishUserRealtimeDelivery(ctx context.Context, userID, aggregateID, eventType string, payload []byte) error {
+	values := metadata.FromContext(ctx)
+	eventID, err := uuid.NewV7()
+	if err != nil {
+		return ErrPublishCommand
+	}
 	delivery, err := s.mapr.marshal(realtimeDeliveryMessage{
+		EventID:       eventID.String(),
 		UserID:        userID,
+		AggregateID:   aggregateID,
 		DeliveryScope: "user",
-		Type:          "order.realtime",
+		Type:          eventType,
+		TestRunID:     values.TestRunID,
 		Payload:       payload,
 	})
 	if err != nil {
@@ -1302,10 +1364,17 @@ func (s *service) publishOrderFailedNotification(ctx context.Context, sagaID, fa
 }
 
 func (s *service) publishRealtimeDelivery(ctx context.Context, payload []byte, userID string) error {
+	values := metadata.FromContext(ctx)
+	eventID, err := uuid.NewV7()
+	if err != nil {
+		return ErrPublishCommand
+	}
 	delivery, err := s.mapr.marshal(realtimeDeliveryMessage{
+		EventID:       eventID.String(),
 		DeliveryScope: "user",
 		UserID:        userID,
 		Type:          "order.realtime",
+		TestRunID:     values.TestRunID,
 		Payload:       payload,
 	})
 	if err != nil {

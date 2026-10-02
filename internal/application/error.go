@@ -23,10 +23,15 @@ var (
 	ErrPublishCommand = errors.New("publish command failed")
 	// ErrInvalidOrderSnapshot reports an invalid gig snapshot response.
 	ErrInvalidOrderSnapshot = errors.New("invalid order snapshot")
+	// ErrGigProjectionNotReady reports that the gig exists but its read model
+	// has not received all fallback projections required to start an order.
+	ErrGigProjectionNotReady = errors.New("gig projection is not ready")
 	// ErrSelfOrderNotAllowed reports that the buyer matches the gig owner.
 	ErrSelfOrderNotAllowed = errors.New("self order not allowed")
 	// ErrOrderNotOwned reports that the confirm request is not owned by the buyer.
 	ErrOrderNotOwned = errors.New("order not owned")
+	// ErrInvalidAttachment reports that an order attachment is missing its identity.
+	ErrInvalidAttachment = errors.New("invalid order attachment")
 	// ErrOrderNotConfirmable reports that the order cannot proceed to checkout yet.
 	ErrOrderNotConfirmable = errors.New("order not confirmable")
 	// ErrOrderAlreadyPaymentPending reports that checkout has already been requested.
