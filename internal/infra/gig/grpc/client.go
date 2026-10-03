@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	app "order-saga-service/internal/application"
@@ -10,7 +11,9 @@ import (
 	gigv1 "github.com/ofm-microservices/ofm-common/proto/gig/v1"
 	otelgrpc "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	grpcpkg "google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 type client struct {
@@ -50,6 +53,9 @@ func (c *client) GetOrderStartSnapshot(ctx context.Context, gigID, packageID str
 		PackageId: packageID,
 	})
 	if err != nil {
+		if status.Code(err) == codes.FailedPrecondition && strings.Contains(strings.ToLower(status.Convert(err).Message()), "gig draft is incomplete") {
+			return nil, errors.Join(app.ErrGigProjectionNotReady, err)
+		}
 		return nil, err
 	}
 	snapshot := res.GetSnapshot()

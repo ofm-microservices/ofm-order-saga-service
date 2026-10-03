@@ -101,6 +101,7 @@ func (c *client) AttachFile(ctx context.Context, cmd app.AttachFileCommand) (*ap
 	_, err := c.cl.AttachFileToOrder(ctx, &orderwritev1.AttachFileToOrderRequest{
 		OrderId:      cmd.OrderID,
 		AttachmentId: cmd.AttachmentID,
+		FileKey:      cmd.FileID,
 	})
 	if err != nil {
 		return nil, err

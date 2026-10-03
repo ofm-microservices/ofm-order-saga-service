@@ -2,11 +2,13 @@ package appfx
 
 import (
 	"context"
+	"time"
 
 	"github.com/ofm-microservices/ofm-common/pkg/logging"
+	sharedmetrics "github.com/ofm-microservices/ofm-common/pkg/observability/metrics"
 	"order-saga-service/config"
 	app "order-saga-service/internal/application"
-	events "order-saga-service/internal/presentation/event_broker/nats"
+	events "order-saga-service/internal/presentation/event_broker/kafka"
 	grpcsrv "order-saga-service/internal/presentation/grpc"
 
 	"go.uber.org/fx"
@@ -16,29 +18,102 @@ import (
 var PresentationModule = fx.Options(
 	fx.Provide(ProvideResultSubscriber),
 	fx.Provide(ProvideStartSubscriber),
+	fx.Provide(ProvideRecoverySubscriber),
 	fx.Provide(ProvideGRPCServer),
 	fx.Invoke(InvokeSubscribeResults),
 	fx.Invoke(InvokeSubscribeStart),
+	fx.Invoke(InvokeSubscribeRecovery),
 	fx.Invoke(InvokeRunGRPCServer),
+	fx.Provide(ProvideMeter),
+	fx.Invoke(InvokeRunMetricsServer),
 )
+
+// ProvideRecoverySubscriber constructs the order-saga migration consumer.
+func ProvideRecoverySubscriber(broker app.EventBroker, svc app.Service, cfg *config.Config, lg logging.Logger) (events.RecoverySubscriber, error) {
+	return events.NewRecoverySubscriber(broker, svc, cfg.Kafka, lg)
+}
+
+// InvokeSubscribeRecovery starts order-saga recovery consumption during startup.
+func InvokeSubscribeRecovery(lc fx.Lifecycle, sub events.RecoverySubscriber, lg logging.Logger) {
+	var cancel context.CancelFunc
+	lc.Append(fx.Hook{OnStart: func(context.Context) error {
+		ctx, stop := context.WithCancel(context.Background())
+		cancel = stop
+		go func() {
+			for ctx.Err() == nil {
+				if err := sub.Subscribe(ctx); err != nil && ctx.Err() == nil {
+					lg.Error("order saga recovery consumer stopped; retrying", logging.Err(err))
+					timer := time.NewTimer(time.Second)
+					select {
+					case <-ctx.Done():
+						timer.Stop()
+						return
+					case <-timer.C:
+					}
+				}
+			}
+		}()
+		return nil
+	}, OnStop: func(context.Context) error {
+		if cancel != nil {
+			cancel()
+		}
+		return nil
+	}})
+}
+
+// ProvideMeter constructs the service-owned Prometheus meter.
+func ProvideMeter(cfg *config.Config) sharedmetrics.Meter {
+	meter := sharedmetrics.New(cfg.App.Name, cfg.App.Env)
+	sharedmetrics.SetGlobal(meter)
+	return meter
+}
+
+// InvokeRunMetricsServer exposes the service-owned Prometheus registry.
+func InvokeRunMetricsServer(lc fx.Lifecycle, cfg *config.Config, meter sharedmetrics.Meter, lg logging.Logger) {
+	var cancel context.CancelFunc
+	lc.Append(fx.Hook{OnStart: func(context.Context) error {
+		runCtx, runCancel := context.WithCancel(context.Background())
+		cancel = runCancel
+		go func() {
+			_ = sharedmetrics.StartServer(runCtx, sharedmetrics.Config{Enabled: cfg.Metrics.Enabled, Host: cfg.Metrics.Host, Port: cfg.Metrics.Port, Path: cfg.Metrics.Path}, meter, lg)
+		}()
+		return nil
+	}, OnStop: func(context.Context) error {
+		if cancel != nil {
+			cancel()
+		}
+		return nil
+	}})
+}
 
 // ProvideResultSubscriber constructs the saga result subscriber.
 func ProvideResultSubscriber(broker app.EventBroker, svc app.Service, cfg *config.Config, lg logging.Logger) *events.ResultSubscriber {
-	return events.NewResultSubscriber(broker, svc, cfg.NATS, lg)
+	return events.NewResultSubscriber(broker, svc, cfg.Kafka, lg)
 }
 
 // ProvideStartSubscriber constructs the order start subscriber.
 func ProvideStartSubscriber(broker app.EventBroker, svc app.Service, cfg *config.Config, lg logging.Logger) *events.StartSubscriber {
-	return events.NewStartSubscriber(broker, svc, cfg.NATS, lg)
+	return events.NewStartSubscriber(broker, svc, cfg.Kafka, lg)
 }
 
-// InvokeSubscribeResults starts the NATS subscriptions.
+// InvokeSubscribeResults starts the Kafka subscriptions.
 func InvokeSubscribeResults(lc fx.Lifecycle, sub *events.ResultSubscriber, lg logging.Logger) {
+	var cancel context.CancelFunc
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			if err := sub.Subscribe(context.Background()); err != nil {
-				lg.Error("subscribe order saga results failed", logging.Err(err))
-				return err
+			runCtx, runCancel := context.WithCancel(context.Background())
+			cancel = runCancel
+			go func() {
+				if err := sub.Subscribe(runCtx); err != nil && runCtx.Err() == nil {
+					lg.Error("subscribe order saga results failed", logging.Err(err))
+				}
+			}()
+			return nil
+		},
+		OnStop: func(context.Context) error {
+			if cancel != nil {
+				cancel()
 			}
 			return nil
 		},
@@ -47,11 +122,21 @@ func InvokeSubscribeResults(lc fx.Lifecycle, sub *events.ResultSubscriber, lg lo
 
 // InvokeSubscribeStart starts the order start subscription.
 func InvokeSubscribeStart(lc fx.Lifecycle, sub *events.StartSubscriber, lg logging.Logger) {
+	var cancel context.CancelFunc
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			if err := sub.Subscribe(context.Background()); err != nil {
-				lg.Error("subscribe order saga start failed", logging.Err(err))
-				return err
+			runCtx, runCancel := context.WithCancel(context.Background())
+			cancel = runCancel
+			go func() {
+				if err := sub.Subscribe(runCtx); err != nil && runCtx.Err() == nil {
+					lg.Error("subscribe order saga start failed", logging.Err(err))
+				}
+			}()
+			return nil
+		},
+		OnStop: func(context.Context) error {
+			if cancel != nil {
+				cancel()
 			}
 			return nil
 		},

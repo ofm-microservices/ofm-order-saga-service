@@ -6,6 +6,7 @@ import (
 	"net"
 
 	"github.com/ofm-microservices/ofm-common/pkg/logging"
+	transportgrpc "github.com/ofm-microservices/ofm-common/pkg/observability/grpc"
 	"github.com/ofm-microservices/ofm-common/pkg/observability/metrics"
 	ordercheckoutv1 "github.com/ofm-microservices/ofm-common/proto/ordercheckout/v1"
 	otelgrpc "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -30,7 +31,7 @@ func NewServer(svc app.Service, cfg config.GRPCConfig, log logging.Logger) (Serv
 	if log == nil {
 		return nil, ErrNilLogger
 	}
-	grpcSrv := grpcpkg.NewServer(grpcpkg.StatsHandler(otelgrpc.NewServerHandler()), grpcpkg.UnaryInterceptor(metrics.UnaryServerInterceptor()))
+	grpcSrv := grpcpkg.NewServer(grpcpkg.StatsHandler(otelgrpc.NewServerHandler()), grpcpkg.ChainUnaryInterceptor(metrics.UnaryServerInterceptor(), transportgrpc.UnaryServerInterceptor(log)))
 	s := &server{svc: svc, cfg: cfg, log: log.With(logging.String("module", "grpc-order-checkout-server")), srv: grpcSrv}
 	ordercheckoutv1.RegisterOrderCheckoutServiceServer(grpcSrv, s)
 	return s, nil
@@ -90,6 +91,14 @@ func (s *server) SubmitMessage(ctx context.Context, req *ordercheckoutv1.SubmitM
 		return nil, mapOrderCheckoutError(err)
 	}
 	return &ordercheckoutv1.SubmitMessageResponse{OrderId: res.OrderID, Status: res.Status, CurrentStep: res.CurrentStep}, nil
+}
+
+func (s *server) CompleteAttachmentUpload(ctx context.Context, req *ordercheckoutv1.CompleteAttachmentUploadRequest) (*ordercheckoutv1.CompleteAttachmentUploadResponse, error) {
+	res, err := s.svc.CompleteAttachmentUpload(ctx, app.CompleteAttachmentUploadCommand{OrderID: req.GetOrderId(), BuyerID: req.GetBuyerUserId(), AttachmentID: req.GetAttachmentId(), FileID: req.GetFileKey()})
+	if err != nil {
+		return nil, mapOrderCheckoutError(err)
+	}
+	return &ordercheckoutv1.CompleteAttachmentUploadResponse{OrderId: res.OrderID, AttachmentId: res.AttachmentID, Status: res.Status}, nil
 }
 func (s *server) ConfirmOrder(ctx context.Context, req *ordercheckoutv1.ConfirmOrderRequest) (*ordercheckoutv1.ConfirmOrderResponse, error) {
 	res, err := s.svc.ConfirmOrder(ctx, app.ConfirmOrderCommand{BuyerID: req.GetBuyerUserId(), OrderID: req.GetOrderId(), RequestedAt: req.GetRequestedAt()})
